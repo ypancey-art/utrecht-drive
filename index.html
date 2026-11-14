@@ -4,16 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>Overvecht Driving Game</title>
+    <title>Utrecht Drive</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <canvas id="game"></canvas>
     <div id="hud">
-      <div id="speed"><span id="speed-value">0</span> <small>km/h</small></div>
+      <div class="col">
+        <div id="speed"><span id="speed-value">0</span> <small>km/h</small></div>
+        <div id="coins">🪙 0</div>
+      </div>
       <div id="street"></div>
-      <button id="lang" type="button">EN</button>
+      <div id="mission" class="hidden"><div id="mission-title"></div><div id="mission-timer"></div></div>
+      <div class="right">
+        <div id="wanted" class="hidden"><div id="stars"></div><div class="meter"><span id="meter-fill"></span></div></div>
+        <button id="lang" type="button">EN</button>
+        <button id="menu-btn" type="button">☰</button>
+      </div>
     </div>
+    <div id="arrow" class="hidden"><div class="needle">▲</div><div id="arrow-dist"></div></div>
     <div id="loading">…</div>
     <div id="hint"></div>
     <div id="toast"></div>
@@ -28,6 +37,7 @@
         <button data-key="gas" type="button" class="gas">▲</button>
       </div>
     </div>
+    <div id="screens"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
