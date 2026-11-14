@@ -61,8 +61,18 @@ Game loop, phases 2-5 (2026-11-14/15):
 - [x] Police (`src/game/police.ts`): crash meter from Rapier contact forces (points = force/(mass*30), max 30), stars at 40/70/90, units route along `RoadGraph` (A*), line of sight by raycast, escape after 10 s unseen, caught when close + slow 1.2 s -> pay 20/star or 2+stars bail problems
 - [x] Sunken water + banks, bridge decks (+4 m) with railing colliders, kerbs, trees kept out of water/buildings
 - [x] Test URL params: `?at=x,z,deg`, `?grade=g5`, `?wanted=2`, `?garage=sedan`
-- [ ] 3D building shapes: `npm run fetch-3d` (after fetch-map!) adds LoD2.2 meshes (public/data/buildings3d.bin), aerial roof colours (PDOK, needs macOS sips), church/mosque flags
+- [x] 3D building shapes: `npm run fetch-3d` (after fetch-map!) adds LoD2.2 meshes (public/data/buildings3d.bin), aerial roof colours (PDOK, needs macOS sips), church/mosque flags
 - Façade colours: no open data exists; walls are styled by year built. Roof colours are real (aerial photo)
+
+World detail (2026-11-15):
+- [x] Cars: "Generic passenger car pack" by Comrade1280 (CC BY 4.0) `public/models/cars/car-pack.glb` (meshopt + webp). `src/art/carModels.ts` pulls each car out of the pack (nearest 4 wheels, PCA for direction, scale to length). Model id = "<node>|<length>|<flip>"
+- [x] Railway on a 4.5 m dyke (`src/game/railway.ts`), OSM rail bridges = concrete decks with streets underneath (Brailledreef)
+- [x] Road decks over water; ditch crossings are culverts (no railings); railings only on real bridges and never on another road
+- [x] 41 playgrounds (`src/game/playgrounds.ts`, `src/art/playgroundMeshes.ts`), De Kinderdroom at (-741, 390)
+- [x] Façade styles checked against Wikimedia Commons photos (Rode Flat, school Op Dreef, Tuindorpkerk): flat/flatBlue/flatWarm/panel/prewar/church
+- [x] Traffic (`src/game/traffic.ts`): directed RoadGraph (one-way), right-hand lane offset, brake for cars ahead; headless test: 10 cars, 0 off-road samples
+- [ ] Road tunnels (4 in OSM, incl. the 1992 wegtunnel at the station) and 15 cycle tunnels under the dreven: not built yet (needs a heightfield ground with cuts)
+- [ ] Façade colours per building: needs Mapillary token (CC BY-SA street photos) or manual Street View look-ups for a few landmarks (Chrome extension)
 
 Known gaps / next steps:
 - Bridges and tunnels are flat (OSM `bridge`/`tunnel` ignored; tunnel roads are hidden)
