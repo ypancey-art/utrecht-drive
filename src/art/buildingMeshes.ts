@@ -72,6 +72,33 @@ const STYLES: Record<string, Style> = {
       glass(g, 30, 28, 68, 66, '#5a4030');
     },
   },
+  church: {
+    bay: 3.2, floor: 6,
+    walls: [0x9a5b45, 0x8c5240, 0xa86a52],
+    roofs: [0x3d4248, 0x47413d],
+    draw: (g) => {
+      bricks(g);
+      // Tall arched window.
+      g.fillStyle = '#e8e2d6';
+      g.beginPath();
+      g.moveTo(44, 120); g.lineTo(44, 40); g.arc(64, 40, 20, Math.PI, 0); g.lineTo(84, 120); g.closePath(); g.fill();
+      g.fillStyle = '#3a4a63';
+      g.beginPath();
+      g.moveTo(48, 118); g.lineTo(48, 42); g.arc(64, 42, 16, Math.PI, 0); g.lineTo(80, 118); g.closePath(); g.fill();
+      g.fillStyle = '#e8e2d6';
+      g.fillRect(63, 30, 2, 88);
+    },
+  },
+  mosque: {
+    bay: 3.4, floor: 5,
+    walls: [0xefeae0, 0xe6dfcf],
+    roofs: [0x7c8a96],
+    draw: (g) => {
+      g.fillStyle = '#2f4d6b';
+      g.beginPath();
+      g.moveTo(46, 116); g.lineTo(46, 50); g.arc(64, 50, 18, Math.PI, 0); g.lineTo(82, 116); g.closePath(); g.fill();
+    },
+  },
   modern: {
     bay: 3.4, floor: 3.0,
     walls: [0xd9d4cc, 0xb8b2a8, 0x6d6f73, 0xc7b9a3],
@@ -81,6 +108,7 @@ const STYLES: Record<string, Style> = {
 };
 
 function styleFor(b: Building): keyof typeof STYLES {
+  if (b.church) return b.church;
   const year = b.year ?? 0;
   const floors = b.floors || Math.round(b.h / 3);
   if (!year) return b.h > 12 ? 'flat' : 'house60';
@@ -161,7 +189,7 @@ class Builder {
 }
 
 /** All buildings: one wall mesh per façade style, plus one roof mesh. */
-export function buildBuildings(list: Building[]): THREE.Group {
+export function buildBuildings(list: Building[], lod3d?: { pos: Int16Array; idx: Uint16Array }): THREE.Group {
   const rings = list.map((b) => openRing(b.pts));
   const party = partyWalls(rings);
   const walls = new Map<string, Builder>();
@@ -178,7 +206,36 @@ export function buildBuildings(list: Building[]): THREE.Group {
     const wallH = pitched ? b.eave! : b.h;
     wc.setHex(style.walls[idx % style.walls.length]);
     rc.setHex(pitched ? style.roofs[idx % style.roofs.length] : [0x6f6f72, 0x7d7a74, 0x5d6066][idx % 3]);
+    if (b.roofColor !== undefined) {
+      // Real roof colour from the aerial photo (brightened a little: photos include shade).
+      rc.setHex(b.roofColor);
+      rc.multiplyScalar(1.2);
+    }
     const wb = walls.get(styleName) ?? walls.set(styleName, new Builder()).get(styleName)!;
+
+    if (b.lod && lod3d) {
+      // Real 3D shape (3D BAG LoD2.2): walls get the façade texture, roofs the measured colour.
+      const [v0, , i0, nWall, nRoof] = b.lod;
+      const P = (k: number) => [lod3d.pos[(v0 + k) * 3] / 10, lod3d.pos[(v0 + k) * 3 + 1] / 10, lod3d.pos[(v0 + k) * 3 + 2] / 10];
+      for (let t = 0; t < nWall; t += 3) {
+        const a = P(lod3d.idx[i0 + t]), bb = P(lod3d.idx[i0 + t + 1]), cc = P(lod3d.idx[i0 + t + 2]);
+        const ux = bb[0] - a[0], uy = bb[1] - a[1], uz = bb[2] - a[2], vx = cc[0] - a[0], vy = cc[1] - a[1], vz = cc[2] - a[2];
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        nx /= nl; ny /= nl; nz /= nl;
+        const hl = Math.hypot(nx, nz) || 1, tx = -nz / hl, tz = nx / hl; // along the wall
+        for (const p of [a, bb, cc]) {
+          wb.pos.push(p[0], p[1], p[2]);
+          wb.nor.push(nx, ny, nz);
+          wb.uv.push(small ? 0.01 : (p[0] * tx + p[2] * tz) / style.bay, small ? 0.99 : p[1] / style.floor);
+          wb.col.push(wc.r, wc.g, wc.b);
+        }
+      }
+      for (let t = nWall; t < nWall + nRoof; t += 3) {
+        roofs.tri(P(lod3d.idx[i0 + t]), P(lod3d.idx[i0 + t + 1]), P(lod3d.idx[i0 + t + 2]), rc);
+      }
+      return;
+    }
 
     // Walls, wound so their front faces outward.
     let area = 0;

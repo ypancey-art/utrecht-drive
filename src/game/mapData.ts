@@ -11,6 +11,9 @@ export interface Building {
   ridge?: number;
   color?: string;
   roof?: string;
+  roofColor?: number; // measured from the aerial photo
+  church?: 'church' | 'mosque';
+  lod?: [number, number, number, number, number]; // 3D shape: vertex start, count, index start, wall indices, roof indices
   pts: Pt[];
 }
 export interface CityTree { p: Pt; genus: string; species: string; year: number }
@@ -27,13 +30,24 @@ export interface MapData {
   treeRows: { pts: Pt[] }[];
   cityTrees?: CityTree[];
   stations: { name: string; p: Pt }[];
+  lodInfo?: { positions: number; indices: number };
+  /** Real 3D building shapes (3D BAG LoD2.2), loaded from buildings3d.bin. */
+  lod3d?: { pos: Int16Array; idx: Uint16Array };
 }
 
 export const MAP_HALF_SIZE = 750;
 
 export async function loadMap(): Promise<MapData> {
   const res = await fetch(`${import.meta.env.BASE_URL}data/overvecht.json`);
-  return res.json();
+  const map: MapData = await res.json();
+  if (map.lodInfo) {
+    const buf = await (await fetch(`${import.meta.env.BASE_URL}data/buildings3d.bin`)).arrayBuffer();
+    map.lod3d = {
+      pos: new Int16Array(buf, 0, map.lodInfo.positions),
+      idx: new Uint16Array(buf, map.lodInfo.positions * 2, map.lodInfo.indices),
+    };
+  }
+  return map;
 }
 
 /** Nearest point on any matching road. Returns the road, the point and the segment direction. */

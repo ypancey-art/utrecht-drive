@@ -3,22 +3,33 @@ import { t } from '../i18n';
 import { CARS, UPGRADE_KINDS, UPGRADE_COST, UPGRADE_PROBLEMS, PAINT_COST, upgradedStats, armourFactor, type CarSpec } from '../game/cars';
 import { upgradesFor, type Progress } from '../game/progress';
 import { buildCarModel } from '../art/carModels';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { groundOffset } from '../game/car';
 import { h, button, modal, mathGate, toast } from './ui';
 
 const NEW_CAR_PROBLEMS = 6;
 
 /** Rotating 3D preview of a car. */
+const still = new URLSearchParams(location.search).has('still'); // testing: fixed angle
+
 function preview(canvas: HTMLCanvasElement) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x667788, 2.2));
-  const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-  sun.position.set(4, 6, 3);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x667788, 0.8));
+  const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+  sun.position.set(4, 7, 3);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4 });
   scene.add(sun);
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(4, 40).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x3a4250 }));
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(4, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2e343e, roughness: 0.35, metalness: 0.1 }));
+  floor.receiveShadow = true;
   scene.add(floor);
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
   camera.position.set(5.2, 2.0, 5.6);
@@ -27,7 +38,7 @@ function preview(canvas: HTMLCanvasElement) {
   scene.add(stand);
   let raf = 0;
   const loop = (time: number) => {
-    stand.rotation.y = time / 2500;
+    stand.rotation.y = still ? 0.6 : time / 2500;
     const w = canvas.clientWidth, hgt = canvas.clientHeight;
     if (canvas.width !== Math.floor(w * renderer.getPixelRatio())) {
       renderer.setSize(w, hgt, false);

@@ -1,0 +1,8 @@
+car-pack.glb: all cars in Utrecht Drive
+  Original: "Generic passenger car pack" by Comrade1280
+  https://sketchfab.com/3d-models/generic-passenger-car-pack-20f9af9b8a404d5cb022ac6fe87f21f5
+  Licence: CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+  Changes: meshopt-compressed with 512 px WebP textures (taken from the CC BY 4.0
+  redistribution in github.com/zazochannel-art/Idle-Car-Empire); in the game each car
+  is taken out of the pack, straightened, scaled, its glass simplified and its paint
+  recoloured.

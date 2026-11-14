@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadMap, nearestRoad } from './game/mapData';
 import { buildMapPhysics } from './game/mapPhysics';
 import { Car } from './game/car';
@@ -90,6 +91,10 @@ async function start() {
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(palette.sky, 180, 700);
   const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 1500);
+  // Soft studio reflections for the cars' paint and glass.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.6;
   scene.add(new THREE.HemisphereLight(0xdfefff, 0x9a9f80, 2.4));
   const sun = new THREE.DirectionalLight(0xfff2dd, 2.2);
   sun.castShadow = true;
@@ -162,7 +167,7 @@ async function start() {
 
   // --- Police ---
   const police = new Police(world, graph, POLICE, () => {
-    const m = buildCarModel(POLICE, 0, { police: true });
+    const m = buildCarModel(POLICE, POLICE.colors[0], { police: true });
     scene.add(m.body, ...m.wheels);
     return {
       sync: (c, time) => {

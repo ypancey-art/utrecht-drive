@@ -14,48 +14,61 @@ export interface CarSpec {
   dims?: CarDims; // filled in by the art layer after loading
 }
 
+// Models: "Generic passenger car pack" by Comrade1280 (CC BY 4.0). Model = "<node>|<length m>|<flip>".
 export const CARS: CarSpec[] = [
   {
-    id: 'sedan', name: 'Sedan', model: 'sedan', price: 0,
-    colors: [0, 0x2f6f8f, 0xd9dcde, 0x1d1f22, 0xb0302e, 0x3d5a3e],
-    stats: { mass: 1500, engineForce: 3300, brakeForce: 90, maxSpeed: 22, maxSteer: 0.55, grip: 3 },
+    id: 'compact', name: 'Compact', model: 'Compact Body|3.9|0', price: 0,
+    colors: [0, 0x2f6f8f, 0xd9dcde, 0x1d1f22, 0xb0302e, 0x7fc4c0],
+    stats: { mass: 1250, engineForce: 2900, brakeForce: 85, maxSpeed: 21, maxSteer: 0.62, grip: 3.3 },
+    armour: 1.05,
+  },
+  {
+    id: 'hatch', name: 'Hatchback', model: 'Hatchback Body|4.2|0', price: 100,
+    colors: [0, 0xf2efe6, 0xd8413a, 0x1e1f22, 0xf2c14e],
+    stats: { mass: 1350, engineForce: 3300, brakeForce: 90, maxSpeed: 23, maxSteer: 0.62, grip: 3.4 },
     armour: 1,
   },
   {
-    id: 'hatch', name: 'Hot Hatch', model: 'hatchback-sports', price: 120,
-    colors: [0, 0x7fc4c0, 0xf2efe6, 0xd8413a, 0xf2c14e],
-    stats: { mass: 1250, engineForce: 3100, brakeForce: 85, maxSpeed: 23, maxSteer: 0.65, grip: 3.5 },
-    armour: 1.1,
+    id: 'sedan', name: 'Sedan', model: 'Sedan Body|4.8|0', price: 180,
+    colors: [0, 0x2b3a4a, 0xd9dcde, 0x8a1c22, 0x9aa2a8],
+    stats: { mass: 1600, engineForce: 4000, brakeForce: 100, maxSpeed: 25, maxSteer: 0.55, grip: 3.2 },
+    armour: 0.95,
   },
   {
-    id: 'suv', name: 'SUV', model: 'suv', price: 220,
+    id: 'wagon', name: 'Stationwagon', model: 'Wagon Body|4.8|0', price: 220,
+    colors: [0, 0x3d5a3e, 0xd9dcde, 0x1b1c1f, 0x3b5f9c],
+    stats: { mass: 1700, engineForce: 4000, brakeForce: 100, maxSpeed: 24, maxSteer: 0.54, grip: 3.2 },
+    armour: 0.85,
+  },
+  {
+    id: 'suv', name: 'SUV', model: 'SUV Body|4.7|0', price: 260,
     colors: [0, 0xf2f2f2, 0x1b1c1f, 0x3b5f9c, 0x8a1c22],
-    stats: { mass: 2000, engineForce: 4600, brakeForce: 100, maxSpeed: 23, maxSteer: 0.52, grip: 3.1 },
-    armour: 0.75,
+    stats: { mass: 2000, engineForce: 4700, brakeForce: 105, maxSpeed: 24, maxSteer: 0.52, grip: 3.1 },
+    armour: 0.7,
   },
   {
-    id: 'van', name: 'Van', model: 'van', price: 280,
+    id: 'minivan', name: 'Minivan', model: 'minivan body|4.9|0', price: 300,
     colors: [0, 0xf3b221, 0x3aa38f, 0xd94a2b, 0x4b8fc9],
-    stats: { mass: 2500, engineForce: 4400, brakeForce: 110, maxSpeed: 20, maxSteer: 0.5, grip: 2.9 },
-    armour: 0.55,
+    stats: { mass: 2200, engineForce: 4500, brakeForce: 110, maxSpeed: 21, maxSteer: 0.5, grip: 3 },
+    armour: 0.6,
   },
   {
-    id: 'sport', name: 'Sport Sedan', model: 'sedan-sports', price: 420,
+    id: 'coupe', name: 'Coupé', model: 'Coupe Body|4.6|0', price: 420,
     colors: [0, 0x9fb8c9, 0x1b1c1f, 0x2e7d4f, 0xd23a2f],
-    stats: { mass: 1700, engineForce: 5600, brakeForce: 120, maxSpeed: 28, maxSteer: 0.52, grip: 3.6 },
-    armour: 1.25,
+    stats: { mass: 1550, engineForce: 5400, brakeForce: 120, maxSpeed: 28, maxSteer: 0.53, grip: 3.6 },
+    armour: 1.2,
   },
   {
-    id: 'future', name: 'Future Racer', model: 'race-future', price: 650,
+    id: 'sport', name: 'Sportwagen', model: 'Sport body|4.5|0', price: 600,
     colors: [0, 0xf2f2f2, 0x35d07f, 0xff7a1a, 0x7a4dff],
-    stats: { mass: 1400, engineForce: 6000, brakeForce: 130, maxSpeed: 32, maxSteer: 0.5, grip: 3.9 },
+    stats: { mass: 1450, engineForce: 6200, brakeForce: 130, maxSpeed: 32, maxSteer: 0.5, grip: 3.9 },
     armour: 1.45,
   },
 ];
 
 /** The police car (not for sale). */
 export const POLICE: CarSpec = {
-  id: 'police', name: 'Politie', model: 'police', price: 0, colors: [0],
+  id: 'police', name: 'Politie', model: 'Wagon Body|4.8|0', price: 0, colors: [0xf4f4f2],
   stats: { mass: 1800, engineForce: 4600, brakeForce: 110, maxSpeed: 21, maxSteer: 0.55, grip: 3.3 },
   armour: 1,
 };

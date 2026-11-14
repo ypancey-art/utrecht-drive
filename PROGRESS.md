@@ -52,9 +52,22 @@ Real-data pass (2026-11-14):
 - Street View can't be used (Google terms); façades are styled from 3D BAG year/height instead
 - Tree WFS paging is broken on the ArcGIS server, so the script fetches in 4 x 4 tiles
 
+Game loop, phases 2-5 (2026-11-14/15):
+- [x] Start screen (grade + language), progress saved in localStorage (`src/game/progress.ts`)
+- [x] Math gate (`src/ui/ui.ts`, `src/game/mathProblems.ts`): multiple choice, keys 1-4; wrong answer = new problem of same type; hint after 2 wrong in a row. Generators for groep 3 to VO 3
+- [x] 8 missions on real streets (`src/game/missions.ts`), timer, arrow, coin rewards (small 3 problems/30, medium 4/50, race 5/80)
+- [x] Cars: Kenney Car Kit (CC0) GLB models in `public/models/cars`, loaded by `src/art/carModels.ts`, sizes measured for physics. 6 cars + police. Paint = recolour body texel colour
+- [x] Garage (`src/ui/garage.ts`): 3D preview, buy (coins + 6 problems), upgrades engine/tires/armour (coins + 3/4/5 problems), paint
+- [x] Police (`src/game/police.ts`): crash meter from Rapier contact forces (points = force/(mass*30), max 30), stars at 40/70/90, units route along `RoadGraph` (A*), line of sight by raycast, escape after 10 s unseen, caught when close + slow 1.2 s -> pay 20/star or 2+stars bail problems
+- [x] Sunken water + banks, bridge decks (+4 m) with railing colliders, kerbs, trees kept out of water/buildings
+- [x] Test URL params: `?at=x,z,deg`, `?grade=g5`, `?wanted=2`, `?garage=sedan`
+- [ ] 3D building shapes: `npm run fetch-3d` (after fetch-map!) adds LoD2.2 meshes (public/data/buildings3d.bin), aerial roof colours (PDOK, needs macOS sips), church/mosque flags
+- Façade colours: no open data exists; walls are styled by year built. Roof colours are real (aerial photo)
+
 Known gaps / next steps:
 - Bridges and tunnels are flat (OSM `bridge`/`tunnel` ignored; tunnel roads are hidden)
 - Water is not blocking. The canal may be missing if OSM stores it as a multipolygon relation (only ways are fetched)
 - Bundle is ~4.9 MB (Rapier "compat" inlines its WASM). Later: switch to `@dimforge/rapier3d` + vite wasm plugin, or lazy-load
 - Houses have flat roofs (no pitched roofs yet); car is still a simple box
-- Then: Phase 2 (core loop: grade select, math gate screen, one mission, coins)
+- Mobile touch controls need rework (user will test later)
+- Possible: Mapillary (CC BY-SA street photos, needs free API token) for façade colours

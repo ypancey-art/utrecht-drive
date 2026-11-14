@@ -330,7 +330,7 @@ export function buildMapMeshes(map: MapData, grid: RoadGrid, water: WaterMap): T
   add(waterHole(map, water));
   add(bridges(map, water));
   add(kerbs(streets, grid, water));
-  add(buildBuildings(map.buildings));
+  add(buildBuildings(map.buildings, map.lod3d));
   for (const s of map.stations) add(stationMarker(s.name, s.p[0], s.p[1]));
   return group;
 }

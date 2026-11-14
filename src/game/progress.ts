@@ -13,8 +13,8 @@ export interface Progress {
 }
 
 const KEY = 'utrecht-drive-progress';
-const KNOWN_CARS = ['sedan', 'hatch', 'suv', 'van', 'sport', 'future'];
-const fresh = (): Progress => ({ grade: null, coins: 0, carId: 'sedan', owned: ['sedan'], upgrades: {}, missionsDone: [] });
+const KNOWN_CARS = ['compact', 'hatch', 'sedan', 'wagon', 'suv', 'minivan', 'coupe', 'sport'];
+const fresh = (): Progress => ({ grade: null, coins: 0, carId: 'compact', owned: ['compact'], upgrades: {}, missionsDone: [] });
 
 /** Saved in this browser only (profiles come later). */
 export function loadProgress(): Progress {
@@ -24,8 +24,8 @@ export function loadProgress(): Progress {
       const p: Progress = { ...fresh(), ...JSON.parse(raw) };
       // Older saves used car ids that no longer exist.
       p.owned = p.owned.filter((id) => KNOWN_CARS.includes(id));
-      if (!p.owned.includes('sedan')) p.owned.unshift('sedan');
-      if (!p.owned.includes(p.carId)) p.carId = 'sedan';
+      if (!p.owned.includes('compact')) p.owned.unshift('compact');
+      if (!p.owned.includes(p.carId)) p.carId = 'compact';
       return p;
     }
   } catch {
