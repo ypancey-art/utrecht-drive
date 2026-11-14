@@ -9,6 +9,8 @@ import { Input } from './game/input';
 import { placeScenery } from './game/scenery';
 import { WaterMap } from './game/water';
 import { buildDyke } from './game/railway';
+import { placePlaygrounds } from './game/playgrounds';
+import { buildPlaygrounds } from './art/playgroundMeshes';
 import { RoadGraph } from './game/roadGraph';
 import { Police, STAR_LEVELS } from './game/police';
 import { buildMissions, MissionRunner, MISSION_SIZE, REACH_RADIUS } from './game/missions';
@@ -119,6 +121,8 @@ async function start() {
   const scenery = placeScenery(map);
   const water = new WaterMap(map);
   const dyke = buildDyke(map);
+  const play = placePlaygrounds(map);
+  scene.add(buildPlaygrounds(play.items, play.areas));
   scene.add(buildMapMeshes(map, scenery.grid, water, dyke), buildTrees(scenery.trees), buildLamps(scenery.lamps));
 
   // --- Physics & world logic ---
@@ -127,7 +131,7 @@ async function start() {
   const events = new RAPIER.EventQueue(true);
   const decks = bridgeSegments(map, water, scenery.grid);
   water.setBridges(decks);
-  buildMapPhysics(world, map, scenery.trees, decks, dyke);
+  buildMapPhysics(world, map, scenery.trees, decks, dyke, play);
   const graph = new RoadGraph(map);
 
   // --- Player car (rebuilt when changing car or upgrades in the garage) ---

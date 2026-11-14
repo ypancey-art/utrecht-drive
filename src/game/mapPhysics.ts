@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import type { MapData } from './mapData';
 import type { Tree } from './scenery';
 import { RAIL_H, RAIL_DECK, type Dyke } from './railway';
+import type { Item } from './playgrounds';
 import { MAP_HALF_SIZE } from './mapData';
 
 /** Static colliders: ground, building walls (one trimesh) and the map edge. */
@@ -11,6 +12,7 @@ export function buildMapPhysics(
   trees: Tree[] = [],
   bridges: { ax: number; az: number; bx: number; bz: number; width: number; rails: [boolean, boolean] }[] = [],
   dyke?: Dyke,
+  play?: { items: Item[]; areas: MapData['playgrounds'] },
 ) {
   const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
   const S = MAP_HALF_SIZE + 200;
@@ -68,6 +70,28 @@ export function buildMapPhysics(
           .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }),
         fixed,
       );
+    }
+  }
+
+  // Playground equipment and fences.
+  if (play) {
+    for (const it of play.items) {
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(...it.half).setTranslation(it.x, it.half[1], it.z).setRotation({ x: 0, y: Math.sin(it.rot / 2), z: 0, w: Math.cos(it.rot / 2) }),
+        fixed,
+      );
+    }
+    for (const { pts } of play.areas) {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+        const len = Math.hypot(bx - ax, bz - az);
+        if (len < 0.3) continue;
+        const yaw = Math.atan2(-(bz - az), bx - ax);
+        world.createCollider(
+          RAPIER.ColliderDesc.cuboid(len / 2, 0.5, 0.05).setTranslation((ax + bx) / 2, 0.5, (az + bz) / 2).setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }),
+          fixed,
+        );
+      }
     }
   }
 
