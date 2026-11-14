@@ -21,16 +21,11 @@ export const DEFAULT_STATS: CarStats = {
 
 export interface DriveInput { throttle: number; steer: number; handbrake: boolean }
 
-const HALF = { x: 2, y: 0.35, z: 0.9 };
-const WHEEL_RADIUS = 0.4;
+export interface CarBody { length: number; width: number; wheelR: number; wheelbase: number }
+const DEFAULT_BODY: CarBody = { length: 4, width: 1.8, wheelR: 0.4, wheelbase: 2.6 };
 const REST_LENGTH = 0.35;
-// Front-left, front-right, rear-left, rear-right. Forward is +x, right is +z.
-const WHEELS = [
-  { x: 1.3, z: -0.85, front: true },
-  { x: 1.3, z: 0.85, front: true },
-  { x: -1.3, z: -0.85, front: false },
-  { x: -1.3, z: 0.85, front: false },
-];
+/** Height of the ground below the chassis centre when the car stands still. */
+export const groundOffset = (wheelR: number) => 0.1 + 0.28 + wheelR;
 
 export class Car {
   body: RAPIER.RigidBody;
@@ -39,24 +34,39 @@ export class Car {
   private world: RAPIER.World;
   private steer = 0;
 
-  constructor(world: RAPIER.World, stats: CarStats = DEFAULT_STATS) {
+  private wheels: { x: number; z: number; front: boolean }[];
+  wheelR: number;
+  collider: RAPIER.Collider;
+
+  constructor(world: RAPIER.World, stats: CarStats = DEFAULT_STATS, dims: CarBody = DEFAULT_BODY) {
     this.world = world;
     this.stats = stats;
+    this.wheelR = dims.wheelR;
+    const HALF = { x: dims.length / 2, y: 0.4, z: dims.width / 2 };
+    const wx = dims.wheelbase / 2, wz = dims.width / 2 - 0.2;
+    // Front-left, front-right, rear-left, rear-right. Forward is +x, right is +z.
+    this.wheels = [
+      { x: wx, z: -wz, front: true },
+      { x: wx, z: wz, front: true },
+      { x: -wx, z: -wz, front: false },
+      { x: -wx, z: wz, front: false },
+    ];
     this.body = world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic().setLinearDamping(0.05).setAngularDamping(0.5).setCanSleep(false),
     );
     const volume = 8 * HALF.x * HALF.y * HALF.z;
-    world.createCollider(
+    this.collider = world.createCollider(
       RAPIER.ColliderDesc.cuboid(HALF.x, HALF.y, HALF.z)
         .setDensity(stats.mass / volume)
         .setFriction(0.4)
-        .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS),
+        .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS)
+        .setContactForceEventThreshold(stats.mass * 12),
       this.body,
     );
 
     this.vehicle = world.createVehicleController(this.body);
-    WHEELS.forEach((w, i) => {
-      this.vehicle.addWheel({ x: w.x, y: -0.1, z: w.z }, { x: 0, y: -1, z: 0 }, { x: 0, y: 0, z: 1 }, REST_LENGTH, WHEEL_RADIUS);
+    this.wheels.forEach((w, i) => {
+      this.vehicle.addWheel({ x: w.x, y: -0.1, z: w.z }, { x: 0, y: -1, z: 0 }, { x: 0, y: 0, z: 1 }, REST_LENGTH, dims.wheelR);
       this.vehicle.setWheelSuspensionStiffness(i, 30);
       this.vehicle.setWheelSuspensionCompression(i, 4.4);
       this.vehicle.setWheelSuspensionRelaxation(i, 2.3);
@@ -69,7 +79,7 @@ export class Car {
   /** Puts the car on the ground at (x, z), facing direction (dirX, dirZ). */
   place(x: number, z: number, dirX: number, dirZ: number) {
     const yaw = Math.atan2(-dirZ, dirX); // rotation about +y that turns +x into (dirX, dirZ)
-    this.body.setTranslation({ x, y: 1.2, z }, true);
+    this.body.setTranslation({ x, y: groundOffset(this.wheelR) + 0.3, z }, true);
     this.body.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -102,7 +112,7 @@ export class Car {
     }
 
     for (let i = 0; i < 4; i++) {
-      const front = WHEELS[i].front;
+      const front = this.wheels[i].front;
       this.vehicle.setWheelSteering(i, front ? this.steer : 0);
       this.vehicle.setWheelEngineForce(i, front ? 0 : engine);
       this.vehicle.setWheelBrake(i, input.handbrake && !front ? s.brakeForce * 2 : brake);
