@@ -10,11 +10,11 @@ import { WaterMap } from './game/water';
 import { RoadGraph } from './game/roadGraph';
 import { Police, STAR_LEVELS } from './game/police';
 import { buildMissions, MissionRunner, MISSION_SIZE, REACH_RADIUS } from './game/missions';
-import { carById, upgradedStats, armourFactor } from './game/cars';
+import { CARS, POLICE, carById, upgradedStats, armourFactor } from './game/cars';
 import { loadProgress, saveProgress, upgradesFor } from './game/progress';
 import { buildMapMeshes } from './art/mapMeshes';
 import { buildTrees, buildLamps } from './art/sceneryMeshes';
-import { buildCarModel, type CarModel } from './art/carModels';
+import { buildCarModel, loadCarAssets, type CarModel } from './art/carModels';
 import { beam } from './art/markers';
 import { palette } from './art/palette';
 import { t, getLang, setLang, onLangChange } from './i18n';
@@ -60,7 +60,8 @@ function syncModel(model: CarModel, car: Car) {
   model.body.quaternion.copy(_q);
   model.wheels.forEach((w, i) => {
     const s = car.wheelState(i);
-    w.position.copy(_v.set(s.x, s.y, s.z).applyQuaternion(_q).add(model.body.position));
+    const z = s.z + Math.sign(s.z) * model.wheelOutset;
+    w.position.copy(_v.set(s.x, s.y, z).applyQuaternion(_q).add(model.body.position));
     _wq.setFromEuler(_e.set(0, s.steering, 0));
     w.quaternion.copy(_q).multiply(_wq).multiply(_sq.setFromAxisAngle(Z, s.rotation));
   });
@@ -68,7 +69,7 @@ function syncModel(model: CarModel, car: Car) {
 }
 
 async function start() {
-  const [, map] = await Promise.all([RAPIER.init(), loadMap()]);
+  const [, map] = await Promise.all([RAPIER.init(), loadMap(), loadCarAssets([...CARS, POLICE])]);
   const progress = loadProgress();
   const save = () => {
     saveProgress(progress);
@@ -133,9 +134,8 @@ async function start() {
       car.dispose();
       scene.remove(model.body, ...model.wheels);
     }
-    const s = spec.shape;
-    car = new Car(world, upgradedStats(spec, up), { length: s.length, width: s.width, wheelR: s.wheelR, wheelbase: s.wheelbase });
-    model = buildCarModel(s, spec.colors[up.paint] ?? spec.colors[0]);
+    car = new Car(world, upgradedStats(spec, up), spec.dims!);
+    model = buildCarModel(spec, spec.colors[up.paint] ?? 0);
     scene.add(model.body, ...model.wheels);
     if (pose) car.place(pose.x, pose.z, pose.dx, pose.dz);
   };
@@ -159,9 +159,8 @@ async function start() {
   }
 
   // --- Police ---
-  const policeSpec = carById('modely');
-  const police = new Police(world, graph, policeSpec, () => {
-    const m = buildCarModel(policeSpec.shape, 0xf4f4f2, { police: true });
+  const police = new Police(world, graph, POLICE, () => {
+    const m = buildCarModel(POLICE, 0, { police: true });
     scene.add(m.body, ...m.wheels);
     return {
       sync: (c, time) => {

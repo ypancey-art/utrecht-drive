@@ -21,7 +21,7 @@ export const DEFAULT_STATS: CarStats = {
 
 export interface DriveInput { throttle: number; steer: number; handbrake: boolean }
 
-export interface CarBody { length: number; width: number; wheelR: number; wheelbase: number }
+export interface CarBody { length: number; width: number; wheelR: number; wheelbase: number; track?: number }
 const DEFAULT_BODY: CarBody = { length: 4, width: 1.8, wheelR: 0.4, wheelbase: 2.6 };
 const REST_LENGTH = 0.35;
 /** Height of the ground below the chassis centre when the car stands still. */
@@ -43,7 +43,7 @@ export class Car {
     this.stats = stats;
     this.wheelR = dims.wheelR;
     const HALF = { x: dims.length / 2, y: 0.4, z: dims.width / 2 };
-    const wx = dims.wheelbase / 2, wz = dims.width / 2 - 0.2;
+    const wx = dims.wheelbase / 2, wz = dims.track ?? dims.width / 2 - 0.2;
     // Front-left, front-right, rear-left, rear-right. Forward is +x, right is +z.
     this.wheels = [
       { x: wx, z: -wz, front: true },

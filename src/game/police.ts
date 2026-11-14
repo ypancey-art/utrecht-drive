@@ -118,9 +118,7 @@ export class Police {
     const nb = this.graph.edges[n][0] ?? n;
     const dir = [this.graph.pts[nb][0] - sx, this.graph.pts[nb][1] - sz];
     const len = Math.hypot(dir[0], dir[1]) || 1;
-    const car = new Car(this.world, { ...this.spec.stats, maxSpeed: 21 }, {
-      length: this.spec.shape.length, width: this.spec.shape.width, wheelR: this.spec.shape.wheelR, wheelbase: this.spec.shape.wheelbase,
-    });
+    const car = new Car(this.world, this.spec.stats, this.spec.dims);
     car.place(sx, sz, dir[0] / len, dir[1] / len);
     this.units.push({ car, visual: this.makeVisual(), path: [], repath: 0, stuck: 0, reversing: 0 });
   }

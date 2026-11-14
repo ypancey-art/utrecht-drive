@@ -19,6 +19,7 @@ Then open http://localhost:5173. Every push to `main` deploys to GitHub Pages (`
 
 - Streets, water, railway, parks: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), Open Database License (ODbL).
 - Buildings (footprints, measured heights, roof type, year built): [3D BAG](https://3dbag.nl) by 3DGI, CC BY 4.0.
+- Car models: [Car Kit by Kenney](https://kenney.nl/assets/car-kit), CC0.
 - Trees (species and planting year): [Bomenkaart, Gemeente Utrecht](https://data.overheid.nl/dataset/utrecht-bomen), CC BY-SA 4.0.
 
 The combined file `public/data/overvecht.json` is shared under the same terms (ODbL / CC BY-SA). `npm run fetch-map` rebuilds it from cached downloads in `scripts/cache/`; add `-- --refresh` to download fresh data.

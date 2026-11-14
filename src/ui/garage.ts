@@ -21,7 +21,7 @@ function preview(canvas: HTMLCanvasElement) {
   const floor = new THREE.Mesh(new THREE.CircleGeometry(4, 40).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x3a4250 }));
   scene.add(floor);
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
-  camera.position.set(6.5, 2.6, 6.5);
+  camera.position.set(5.2, 2.0, 5.6);
   camera.lookAt(0, 0.7, 0);
   const stand = new THREE.Group();
   scene.add(stand);
@@ -41,11 +41,11 @@ function preview(canvas: HTMLCanvasElement) {
   return {
     show(spec: CarSpec, paint: number) {
       stand.clear();
-      const m = buildCarModel(spec.shape, paint);
+      const m = buildCarModel(spec, paint);
       // Place the wheels where the physics would put them (standing still).
-      const s = spec.shape, wx = s.wheelbase / 2, wz = s.width / 2 - 0.2;
-      [[wx, -wz], [wx, wz], [-wx, -wz], [-wx, wz]].forEach(([x, z], i) => m.wheels[i].position.set(x, s.wheelR, z));
-      m.body.position.y = groundOffset(s.wheelR);
+      const d = spec.dims!, wx = d.wheelbase / 2, wz = d.track;
+      [[wx, -wz], [wx, wz], [-wx, -wz], [-wx, wz]].forEach(([x, z], i) => m.wheels[i]?.position.set(x, d.wheelR, z));
+      m.body.position.y = groundOffset(d.wheelR);
       stand.add(m.body, ...m.wheels);
     },
     dispose() {
@@ -99,7 +99,7 @@ export function openGarage(p: Progress, grade: Progress['grade'], onChange: () =
         viewing = c.id;
         render();
       }, c.id === viewing ? 'primary' : '')));
-      view.show(spec, spec.colors[u.paint] ?? spec.colors[0]);
+      view.show(spec, spec.colors[u.paint] ?? 0);
 
       const st = upgradedStats(spec, u);
       const stats = h('div', { class: 'stats' },
@@ -145,7 +145,7 @@ export function openGarage(p: Progress, grade: Progress['grade'], onChange: () =
               save();
             }
           }, i === u.paint ? 'swatch on' : 'swatch');
-          b.style.background = `#${c.toString(16).padStart(6, '0')}`;
+          b.style.background = c ? `#${c.toString(16).padStart(6, '0')}` : 'conic-gradient(#e44, #fd4, #4c8, #48f, #e44)';
           b.title = `🪙 ${PAINT_COST}`;
           return b;
         }));

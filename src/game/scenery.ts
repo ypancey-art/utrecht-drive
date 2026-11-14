@@ -1,6 +1,7 @@
 // Where trees and street lights go. Shared by the visuals (src/art) and physics,
 // and deterministic (seeded), so every player sees the same Overvecht.
 import type { MapData, Pt } from './mapData';
+import { WaterMap } from './water';
 
 /** kind: 0 round, 1 narrow, 2 conifer, 3 willow (wide, weeping). h = height, crown = crown diameter (m). */
 export interface Tree { x: number; z: number; h: number; crown: number; kind: 0 | 1 | 2 | 3 }
@@ -40,7 +41,9 @@ function rng(seed: number) {
 /** Grid of road segments for fast "how far from the road edge" checks. */
 export class RoadGrid {
   private cells = new Map<string, number[]>(); // flat [ax, az, bx, bz, halfWidth, ...]
-  constructor(map: MapData, private cell = 25) {
+  private cell = 25;
+  constructor(map: MapData) {
+    const cell = this.cell;
     for (const r of map.roads) {
       const hw = r.width / 2;
       for (let i = 0; i < r.pts.length - 1; i++) {
@@ -70,6 +73,41 @@ export class RoadGrid {
       const d = Math.hypot(x - ax - dx * s, z - az - dz * s) - list[i + 4];
       if (d < best) best = d;
     }
+    return best;
+  }
+}
+
+/** Buildings by grid cell, to keep trees out of walls. */
+class BuildingGrid {
+  private cells = new Map<string, Pt[][]>();
+  private cell = 25;
+  constructor(map: MapData) {
+    for (const { pts } of map.buildings) {
+      const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
+      for (let x = Math.floor(Math.min(...xs) / this.cell); x <= Math.floor(Math.max(...xs) / this.cell); x++)
+        for (let z = Math.floor(Math.min(...zs) / this.cell); z <= Math.floor(Math.max(...zs) / this.cell); z++) {
+          const k = `${x},${z}`;
+          (this.cells.get(k) ?? this.cells.set(k, []).get(k)!).push(pts);
+        }
+    }
+  }
+  /** Distance from (x, z) to the nearest building wall; negative when inside a building. */
+  wallDistance(x: number, z: number) {
+    let best = this.cell;
+    const cx = Math.floor(x / this.cell), cz = Math.floor(z / this.cell);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++)
+        for (const pts of this.cells.get(`${cx + dx},${cz + dz}`) ?? []) {
+          let d = Infinity;
+          for (let i = 0; i < pts.length - 1; i++) {
+            const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+            const ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez || 1;
+            const s = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2));
+            d = Math.min(d, Math.hypot(x - ax - ex * s, z - az - ez * s));
+          }
+          if (pointInPolygon(x, z, pts)) return -d;
+          best = Math.min(best, d);
+        }
     return best;
   }
 }
@@ -114,18 +152,32 @@ export function placeScenery(map: MapData) {
   scatter(map.woods, city.length ? 1 / 160 : 1 / 70, rand, spots);
   if (!city.length) scatter(map.green, 1 / 900, rand, spots);
 
+  const water = new WaterMap(map);
+  const walls = new BuildingGrid(map);
   const trees: Tree[] = [];
+  // No trees in water or inside buildings; crowns may not grow through walls.
+  const add = (t: Tree) => {
+    if (water.contains(t.x, t.z)) return;
+    const wall = walls.wallDistance(t.x, t.z);
+    if (wall < 0.4) return;
+    const maxCrown = 2 * (wall + 0.6);
+    if (t.crown > maxCrown) {
+      t.h *= Math.max(0.6, maxCrown / t.crown);
+      t.crown = maxCrown;
+    }
+    trees.push(t);
+  };
   for (const t of city) {
     const [x, z] = t.p;
     if (grid.edgeDistance(x, z) < 0.5) continue;
-    trees.push({ x, z, ...cityTreeSize(t.genus, t.species, t.year, rand) });
+    add({ x, z, ...cityTreeSize(t.genus, t.species, t.year, rand) });
   }
   for (const [x, z] of spots) {
     if (grid.edgeDistance(x, z) < 1.5) continue; // keep roads and paths clear
     const r = rand();
     const h = 9 + rand() * 9;
     const kind = r < 0.7 ? 0 : r < 0.85 ? 1 : 2;
-    trees.push({ x, z, h, crown: h * (kind === 0 ? 0.6 : 0.4), kind });
+    add({ x, z, h, crown: h * (kind === 0 ? 0.6 : 0.4), kind });
   }
 
   // Street lights on one side of the bigger named roads, about every 35 m.
