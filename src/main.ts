@@ -12,7 +12,7 @@ import { Police, STAR_LEVELS } from './game/police';
 import { buildMissions, MissionRunner, MISSION_SIZE, REACH_RADIUS } from './game/missions';
 import { CARS, POLICE, carById, upgradedStats, armourFactor } from './game/cars';
 import { loadProgress, saveProgress, upgradesFor } from './game/progress';
-import { buildMapMeshes } from './art/mapMeshes';
+import { buildMapMeshes, bridgeSegments } from './art/mapMeshes';
 import { buildTrees, buildLamps } from './art/sceneryMeshes';
 import { buildCarModel, loadCarAssets, type CarModel } from './art/carModels';
 import { beam } from './art/markers';
@@ -65,7 +65,7 @@ function syncModel(model: CarModel, car: Car) {
     _wq.setFromEuler(_e.set(0, s.steering, 0));
     w.quaternion.copy(_q).multiply(_wq).multiply(_sq.setFromAxisAngle(Z, s.rotation));
   });
-  model.setOpacity(car.sinking ? Math.max(0, 1 - car.sinking / 2.5) : 1);
+  model.setOpacity(car.sinking ? Math.max(0, Math.min(1, 1 - (car.sinking - 1.6) / 1.4)) : 1);
 }
 
 async function start() {
@@ -111,14 +111,16 @@ async function start() {
   scene.add(sky);
 
   const scenery = placeScenery(map);
-  scene.add(buildMapMeshes(map), buildTrees(scenery.trees), buildLamps(scenery.lamps));
+  const water = new WaterMap(map);
+  scene.add(buildMapMeshes(map, scenery.grid, water), buildTrees(scenery.trees), buildLamps(scenery.lamps));
 
   // --- Physics & world logic ---
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   world.timestep = 1 / 60;
   const events = new RAPIER.EventQueue(true);
-  buildMapPhysics(world, map, scenery.trees);
-  const water = new WaterMap(map);
+  const decks = bridgeSegments(map, water);
+  water.setBridges(decks);
+  buildMapPhysics(world, map, scenery.trees, decks);
   const graph = new RoadGraph(map);
 
   // --- Player car (rebuilt when changing car or upgrades in the garage) ---

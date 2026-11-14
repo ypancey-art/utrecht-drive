@@ -2,6 +2,12 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MapData, Pt, Road } from '../game/mapData';
 import { buildBuildings } from './buildingMeshes';
+import type { RoadGrid } from '../game/scenery';
+import type { WaterMap } from '../game/water';
+
+export const WATER_Y = -0.7; // water surface sits below street level
+const BED_Y = -1.8;
+const BRIDGE_EXTRA = 4; // bridges are this much wider than the road
 import { MAP_HALF_SIZE } from '../game/mapData';
 import { palette } from './palette';
 
@@ -167,7 +173,145 @@ function stationMarker(name: string, x: number, z: number): THREE.Object3D {
   return group;
 }
 
-export function buildMapMeshes(map: MapData): THREE.Group {
+/** Vertical strips along polylines (canal banks, kerbs, bridge sides), all in one geometry. */
+function walls(lines: [number, number, number, number][], y0: number, y1: number): THREE.BufferGeometry | null {
+  const pos: number[] = [];
+  for (const [ax, az, bx, bz] of lines) pos.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y0, az, bx, y1, bz, ax, y1, az);
+  if (!pos.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Outline segments of water areas and both banks of waterways. */
+function waterEdges(map: MapData) {
+  const out: [number, number, number, number][] = [];
+  for (const { pts } of map.water) for (let i = 0; i < pts.length - 1; i++) out.push([pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]]);
+  for (const { pts, width } of map.waterways) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+      const len = Math.hypot(bx - ax, bz - az) || 1;
+      const nx = (-(bz - az) / len) * (width / 2), nz = ((bx - ax) / len) * (width / 2);
+      out.push([ax + nx, az + nz, bx + nx, bz + nz], [ax - nx, az - nz, bx - nx, bz - nz]);
+    }
+  }
+  return out;
+}
+
+/** Road and path pieces that cross water: these become bridge decks. */
+export function bridgeSegments(map: MapData, water: WaterMap) {
+  const segs: { ax: number; az: number; bx: number; bz: number; width: number }[] = [];
+  for (const r of map.roads) {
+    if (r.tunnel) continue;
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const [ax, az] = r.pts[i], [bx, bz] = r.pts[i + 1];
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 2));
+      for (let k = 0; k < n; k++) {
+        const x0 = ax + ((bx - ax) * k) / n, z0 = az + ((bz - az) * k) / n;
+        const x1 = ax + ((bx - ax) * (k + 1)) / n, z1 = az + ((bz - az) * (k + 1)) / n;
+        if (water.contains((x0 + x1) / 2, (z0 + z1) / 2) || r.bridge) segs.push({ ax: x0, az: z0, bx: x1, bz: z1, width: r.width + BRIDGE_EXTRA });
+      }
+    }
+  }
+  return segs;
+}
+
+function bridges(map: MapData, water: WaterMap): THREE.Group {
+  const g = new THREE.Group();
+  const segs = bridgeSegments(map, water);
+  // Extend each piece a little so neighbouring pieces overlap without gaps.
+  const deck = ribbons(segs.map((s) => {
+    const len = Math.hypot(s.bx - s.ax, s.bz - s.az) || 1, ux = (s.bx - s.ax) / len, uz = (s.bz - s.az) / len;
+    return { pts: [[s.ax - ux * 0.3, s.az - uz * 0.3], [s.bx + ux * 0.3, s.bz + uz * 0.3]] as Pt[], width: s.width };
+  }));
+  if (deck) {
+    deck.translate(0, 0.04, 0);
+    const m = new THREE.Mesh(deck, new THREE.MeshLambertMaterial({ color: palette.bridge }));
+    m.receiveShadow = true;
+    g.add(m);
+  }
+  const sides: [number, number, number, number][] = [];
+  for (const s of segs) {
+    const len = Math.hypot(s.bx - s.ax, s.bz - s.az) || 1;
+    const nx = (-(s.bz - s.az) / len) * (s.width / 2), nz = ((s.bx - s.ax) / len) * (s.width / 2);
+    sides.push([s.ax + nx, s.az + nz, s.bx + nx, s.bz + nz], [s.ax - nx, s.az - nz, s.bx - nx, s.bz - nz]);
+  }
+  const mat = new THREE.MeshLambertMaterial({ color: palette.bridgeSide, side: THREE.DoubleSide });
+  const side = walls(sides, BED_Y + 0.4, 0.04);
+  if (side) g.add(new THREE.Mesh(side, mat));
+  const rail = walls(sides, 0.04, 1.0);
+  if (rail) {
+    const rm = new THREE.Mesh(rail, new THREE.MeshLambertMaterial({ color: palette.railing, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
+    rm.castShadow = true;
+    g.add(rm);
+  }
+  return g;
+}
+
+/** Sunken water: bed, banks and a see-through surface. */
+function waterHole(map: MapData, water: WaterMap): THREE.Group {
+  const g = new THREE.Group();
+  const parts = [polygons(map.water), ribbons(map.waterways)].filter(Boolean) as THREE.BufferGeometry[];
+  if (!parts.length) return g;
+  const area = mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)));
+  const bed = new THREE.Mesh(area.clone().translate(0, BED_Y, 0), new THREE.MeshLambertMaterial({ color: palette.waterBed, side: THREE.DoubleSide }));
+  const surface = new THREE.Mesh(
+    area.clone().translate(0, WATER_Y, 0),
+    new THREE.MeshLambertMaterial({ color: palette.water, transparent: true, opacity: 0.78, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  surface.receiveShadow = true;
+  // Only real banks: skip edge pieces with water on both sides (where a ditch joins a canal).
+  const edges = waterEdges(map).filter(([ax, az, bx, bz]) => {
+    const len = Math.hypot(bx - ax, bz - az) || 1;
+    const mx = (ax + bx) / 2, mz = (az + bz) / 2, nx = (-(bz - az) / len) * 0.8, nz = ((bx - ax) / len) * 0.8;
+    return !(water.contains(mx + nx, mz + nz) && water.contains(mx - nx, mz - nz));
+  });
+  const banks = walls(edges, BED_Y, 0.02);
+  g.add(bed, surface);
+  if (banks) g.add(new THREE.Mesh(banks, new THREE.MeshLambertMaterial({ color: palette.bank, side: THREE.DoubleSide })));
+  return g;
+}
+
+/** Kerbs along both edges of the streets, with gaps at junctions, crossings and water. */
+function kerbs(roads: Road[], grid: RoadGrid, water: WaterMap): THREE.Group {
+  const faces: [number, number, number, number][] = [];
+  const tops: { pts: Pt[]; width: number }[] = [];
+  for (const r of roads) {
+    if (r.kind === 'service' || r.width < 4.5) continue;
+    const hw = r.width / 2;
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const [ax, az] = r.pts[i], [bx, bz] = r.pts[i + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      if (len < 0.01) continue;
+      const ux = (bx - ax) / len, uz = (bz - az) / len, nx = -uz, nz = ux;
+      const n = Math.ceil(len / 2);
+      for (let k = 0; k < n; k++) {
+        const d0 = (len * k) / n, d1 = (len * (k + 1)) / n, dm = (d0 + d1) / 2;
+        for (const side of [-1, 1]) {
+          const o = side * hw;
+          const tx = ax + ux * dm + nx * (o + side * 0.4), tz = az + uz * dm + nz * (o + side * 0.4);
+          if (grid.edgeDistance(tx, tz) < 0 || water.contains(tx, tz)) continue; // another road or water there
+          const p0: Pt = [ax + ux * d0 + nx * o, az + uz * d0 + nz * o], p1: Pt = [ax + ux * d1 + nx * o, az + uz * d1 + nz * o];
+          faces.push([p0[0], p0[1], p1[0], p1[1]]);
+          tops.push({ pts: [[p0[0] + nx * side * 0.08, p0[1] + nz * side * 0.08], [p1[0] + nx * side * 0.08, p1[1] + nz * side * 0.08]], width: 0.16 });
+        }
+      }
+    }
+  }
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color: palette.kerb, side: THREE.DoubleSide });
+  const face = walls(faces, 0, 0.12);
+  if (face) g.add(new THREE.Mesh(face, mat));
+  const top = ribbons(tops);
+  if (top) {
+    top.translate(0, 0.12, 0);
+    g.add(new THREE.Mesh(top, mat));
+  }
+  return g;
+}
+
+export function buildMapMeshes(map: MapData, grid: RoadGrid, water: WaterMap): THREE.Group {
   const group = new THREE.Group();
   const size = MAP_HALF_SIZE * 2 + 400;
   const ground = new THREE.PlaneGeometry(size, size).rotateX(-Math.PI / 2);
@@ -176,8 +320,6 @@ export function buildMapMeshes(map: MapData): THREE.Group {
 
   add(flatMesh(ground, palette.ground, LAYER.ground));
   add(flatMesh(polygons([...map.green, ...map.woods]), palette.green, LAYER.green));
-  const water = [polygons(map.water), ribbons(map.waterways)].filter(Boolean) as THREE.BufferGeometry[];
-  if (water.length) add(flatMesh(mergeGeometries(water.map((g) => (g.index ? g.toNonIndexed() : g))), palette.water, LAYER.water));
   add(flatMesh(ribbons(map.roads.filter((r) => !r.drivable)), palette.path, LAYER.path));
   add(railways(map.rails));
   // Pavements: a wider light strip under the bigger streets.
@@ -185,6 +327,9 @@ export function buildMapMeshes(map: MapData): THREE.Group {
   add(flatMesh(ribbons(paved.map((r) => ({ pts: r.pts, width: r.width + 3.5 }))), palette.pavement, LAYER.pavement));
   add(flatMesh(ribbons(streets), palette.road, LAYER.road));
   add(flatMesh(laneMarkings(streets), palette.marking, LAYER.marking));
+  add(waterHole(map, water));
+  add(bridges(map, water));
+  add(kerbs(streets, grid, water));
   add(buildBuildings(map.buildings));
   for (const s of map.stations) add(stationMarker(s.name, s.p[0], s.p[1]));
   return group;

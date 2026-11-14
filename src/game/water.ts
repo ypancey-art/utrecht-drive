@@ -18,7 +18,19 @@ export class WaterMap {
     }
   }
 
+  private decks: { ax: number; az: number; bx: number; bz: number; width: number }[] = [];
+  /** Bridge decks: points on a deck are not "in the water". */
+  setBridges(decks: { ax: number; az: number; bx: number; bz: number; width: number }[]) {
+    this.decks = decks;
+  }
+
   contains(x: number, z: number) {
+    for (const d of this.decks) {
+      if (Math.abs(x - d.ax) > 12 + d.width || Math.abs(z - d.az) > 12 + d.width) continue;
+      const dx = d.bx - d.ax, dz = d.bz - d.az, l2 = dx * dx + dz * dz || 1;
+      const s = Math.max(0, Math.min(1, ((x - d.ax) * dx + (z - d.az) * dz) / l2));
+      if (Math.hypot(x - d.ax - dx * s, z - d.az - dz * s) < d.width / 2 + 0.3) return false;
+    }
     for (const p of this.polys) {
       if (x < p.minX || x > p.maxX || z < p.minZ || z > p.maxZ) continue;
       let inside = false;

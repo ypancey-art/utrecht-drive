@@ -136,7 +136,10 @@ export class Car {
     const drag = Math.exp(-dt * 1.5);
     this.sinkVel.x *= drag;
     this.sinkVel.z *= drag;
-    const y = Math.max(-2.6, p.y - dt * (0.4 + this.sinking * 0.5));
+    // Drop into the canal quickly, then sink slowly below the surface.
+    const floatY = -0.7 + 0.2;
+    const vy = p.y > floatY ? 2 + this.sinking * 8 : 0.45;
+    const y = Math.max(-2.6, p.y - dt * vy);
     this.body.setNextKinematicTranslation({ x: p.x + this.sinkVel.x * dt, y, z: p.z + this.sinkVel.z * dt });
     // Tip the nose down (rotate about the car's own sideways axis).
     const r = this.body.rotation();

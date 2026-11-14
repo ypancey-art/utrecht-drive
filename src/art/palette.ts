@@ -11,7 +11,12 @@ export const palette = {
   ballast: 0x8a8178,
   sleeper: 0x5b4a3e,
   steel: 0x9aa0a6,
-  waterBed: 0x1f3a4a,
+  waterBed: 0x1d2f33,
+  bank: 0x6f6553,
+  bridge: 0x55585e,
+  bridgeSide: 0x8d8a83,
+  railing: 0x4a5a66,
+  kerb: 0xc9c6bf,
   // Walls (multiplied with the window texture). Tall flats get the first three.
   flats: [0xe9e4da, 0xd6d3cc, 0xcfc4b0],
   houses: [0xb9654a, 0xa9573f, 0xc98f6e, 0xd9c3a5, 0x9b5a45],

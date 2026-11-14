@@ -45,7 +45,7 @@ export class RoadGrid {
   constructor(map: MapData) {
     const cell = this.cell;
     for (const r of map.roads) {
-      const hw = r.width / 2;
+      const hw = (r.width + (r.bridge ? 4 : 0)) / 2;
       for (let i = 0; i < r.pts.length - 1; i++) {
         const [ax, az] = r.pts[i];
         const [bx, bz] = r.pts[i + 1];
