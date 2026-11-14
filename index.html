@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Overvecht Driving Game</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="hud">
+      <div id="speed"><span id="speed-value">0</span> <small>km/h</small></div>
+      <div id="street"></div>
+      <button id="lang" type="button">EN</button>
+    </div>
+    <div id="loading">…</div>
+    <div id="hint"></div>
+    <div id="credit">© OpenStreetMap contributors</div>
+    <div id="touch">
+      <div class="pad left">
+        <button data-key="left" type="button">◀</button>
+        <button data-key="right" type="button">▶</button>
+      </div>
+      <div class="pad right">
+        <button data-key="brake" type="button" class="brake">▼</button>
+        <button data-key="gas" type="button" class="gas">▲</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
