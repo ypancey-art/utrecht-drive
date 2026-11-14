@@ -23,5 +23,14 @@ export function buildCarMesh(look: CarLook = { body: 0xe23b3b, cabin: 0x2b3a4a }
     w.castShadow = true;
     return w;
   });
-  return { body, wheels };
+  /** Fades the car out (1 = solid, 0 = gone), e.g. while it sinks. */
+  const materials = new Set<THREE.Material>();
+  for (const o of [body, ...wheels]) o.traverse((m) => m instanceof THREE.Mesh && materials.add(m.material as THREE.Material));
+  const setOpacity = (v: number) => {
+    for (const m of materials) {
+      m.transparent = v < 1;
+      m.opacity = v;
+    }
+  };
+  return { body, wheels, setOpacity };
 }

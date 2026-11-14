@@ -2,6 +2,7 @@
 // converts it to a compact JSON in local metres (x = east, z = south).
 // Run once: npm run fetch-map  ->  public/data/overvecht.json
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { toRd } from './rd.mjs';
 
 // Raw Overpass response is cached here; delete it (or pass --refresh) to download again.
 const RAW = 'scripts/cache/osm-raw.json';
@@ -63,6 +64,57 @@ if (process.argv.includes('--refresh') || !existsSync(RAW)) {
 }
 const osm = JSON.parse(readFileSync(RAW, 'utf8'));
 
+// --- Extra open data (also cached) ---
+const [rdMinX, rdMinY] = toRd(CENTER.lat - HALF_LAT, CENTER.lon - HALF_LON).map(Math.floor);
+const [rdMaxX, rdMaxY] = toRd(CENTER.lat + HALF_LAT, CENTER.lon + HALF_LON).map(Math.ceil);
+const rdBbox = `${rdMinX},${rdMinY},${rdMaxX},${rdMaxY},urn:ogc:def:crs:EPSG::28992`;
+
+/** Pages through a WFS layer as GeoJSON in WGS84 (lon, lat). */
+async function wfsAll(base, typeName, extra = '') {
+  const features = [];
+  for (let start = 0; ; start += 1000) {
+    const url = `${base}?service=WFS&version=2.0.0&request=GetFeature&typeNames=${typeName}&count=1000&startIndex=${start}` +
+      `&bbox=${rdBbox}&outputFormat=${extra.includes('GEOJSON') ? 'GEOJSON' : 'application/json&srsName=EPSG:4326'}${extra.replace('GEOJSON', '')}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${typeName}: ${res.status}`);
+    const page = await res.json();
+    features.push(...page.features);
+    console.log(`  ${typeName}: ${features.length}`);
+    if (page.features.length < 1000) return features;
+  }
+}
+async function cached(file, make) {
+  const path = `scripts/cache/${file}`;
+  if (process.argv.includes('--refresh') || !existsSync(path)) writeFileSync(path, JSON.stringify(await make()));
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+mkdirSync('scripts/cache', { recursive: true });
+// 3D BAG (CC BY 4.0): official footprints + laser-measured heights + year built.
+const BAG_FIELDS = 'geom,identificatie,b3_h_70p,b3_h_min,b3_h_max,b3_h_nok,b3_dak_type,b3_h_maaiveld,b3_bouwlagen,oorspronkelijkbouwjaar,status';
+const bag = await cached('bag3d.json', () => wfsAll('https://data.3dbag.nl/api/BAG3D/wfs', 'BAG3D:lod12', `&propertyName=${BAG_FIELDS}`));
+// Gemeente Utrecht tree register (CC BY-SA 4.0): species + planting year per tree.
+const TREES_WFS = 'https://dservices-eu1.arcgis.com/SMnoOtmU2UWf0vRp/arcgis/services/bomenkaart_2026/WFSServer';
+// This ArcGIS server's paging is unreliable, so fetch in 4 x 4 tiles (max 3000 per request).
+async function treesTiled(layer) {
+  const byId = new Map();
+  const N = 4, w = (rdMaxX - rdMinX) / N, h = (rdMaxY - rdMinY) / N;
+  for (let i = 0; i < N; i++)
+    for (let j = 0; j < N; j++) {
+      const bb = [rdMinX + i * w, rdMinY + j * h, rdMinX + (i + 1) * w, rdMinY + (j + 1) * h].map(Math.round).join(',');
+      const url = `${TREES_WFS}?service=WFS&version=2.0.0&request=GetFeature&typeNames=${layer}&count=3000` +
+        `&bbox=${bb},urn:ogc:def:crs:EPSG::28992&outputFormat=GEOJSON`;
+      const page = await (await fetch(url)).json();
+      if (page.features.length >= 3000) throw new Error(`${layer}: tile too full, use more tiles`);
+      for (const f of page.features) byId.set(f.properties.OBJECTID ?? f.id, f);
+    }
+  console.log(`  ${layer}: ${byId.size}`);
+  return [...byId.values()];
+}
+const cityTrees = await cached('trees.json', async () => [
+  ...(await treesTiled('bomenkaart_2026:Park_en_Straatbomen')),
+  ...(await treesTiled('bomenkaart_2026:bomen_in_bosplantsoen')),
+]);
+
 const M_PER_LAT = 111320;
 const M_PER_LON = 111320 * Math.cos((CENTER.lat * Math.PI) / 180);
 const nodes = new Map();
@@ -88,6 +140,13 @@ const DRIVABLE = new Set([
   'residential', 'living_street', 'service', 'motorway_link', 'trunk_link',
   'primary_link', 'secondary_link', 'tertiary_link',
 ]);
+
+const local = (lon, lat) => [
+  +((lon - CENTER.lon) * M_PER_LON).toFixed(1),
+  +(-(lat - CENTER.lat) * M_PER_LAT).toFixed(1),
+];
+/** GeoJSON coordinate pair: [lon, lat], or [lat, lon] if a server flipped the axes. */
+const fromGeo = ([a, b]) => (a > 40 ? local(b, a) : local(a, b));
 
 const out = { center: CENTER, roads: [], buildings: [], water: [], waterways: [], rails: [], green: [], woods: [], trees: [], treeRows: [], stations: [] };
 for (const el of osm.elements) {
@@ -136,7 +195,8 @@ for (const el of osm.elements) {
   } else if (t.natural === 'water') {
     out.water.push({ pts });
   } else if (t.waterway) {
-    out.waterways.push({ width: t.waterway === 'canal' ? 25 : t.waterway === 'river' ? 15 : 4, pts });
+    const ww = parseFloat(t.width);
+    out.waterways.push({ width: ww > 0 && ww < 80 ? ww : t.waterway === 'canal' ? 10 : t.waterway === 'river' ? 15 : 3, pts });
   } else if (t.natural === 'tree_row') {
     out.treeRows.push({ pts });
   } else if (t.natural === 'wood' || t.natural === 'scrub' || t.landuse === 'forest') {
@@ -144,6 +204,36 @@ for (const el of osm.elements) {
   } else if (t.leisure || t.landuse) {
     out.green.push({ pts });
   }
+}
+
+// Buildings from 3D BAG replace the OSM ones (better footprints + real heights).
+const bagBuildings = [];
+for (const f of bag) {
+  const p = f.properties;
+  if (!f.geometry || /gesloopt|niet gerealiseerd|ingetrokken/i.test(p.status ?? '')) continue;
+  const rings = f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates.map((poly) => poly[0]) : [f.geometry.coordinates[0]];
+  const ground = p.b3_h_maaiveld ?? 0;
+  const h = (p.b3_h_70p ?? 0) - ground;
+  if (!(h > 1)) continue;
+  for (const ring of rings) {
+    const b = { h: +h.toFixed(1), type: '', year: p.oorspronkelijkbouwjaar ?? 0, floors: p.b3_bouwlagen ?? 0, pts: ring.map(fromGeo) };
+    if (p.b3_dak_type === 'slanted' && p.b3_h_nok) {
+      b.eave = +Math.max(2.5, (p.b3_h_min ?? p.b3_h_70p) - ground).toFixed(1);
+      b.ridge = +(p.b3_h_nok - ground).toFixed(1);
+      if (b.ridge - b.eave < 1) delete b.eave, delete b.ridge;
+    }
+    bagBuildings.push(b);
+  }
+}
+if (bagBuildings.length > 1000) out.buildings = bagBuildings;
+
+// City trees replace OSM single trees/rows (the register is complete for public trees).
+out.cityTrees = cityTrees
+  .filter((f) => f.geometry?.type === 'Point')
+  .map((f) => ({ p: fromGeo(f.geometry.coordinates), genus: f.properties.Legenda ?? '', species: f.properties.Wetenschap ?? '', year: f.properties.plantjaar ?? 0 }));
+if (out.cityTrees.length > 500) {
+  out.trees = [];
+  out.treeRows = [];
 }
 
 writeFileSync('public/data/overvecht.json', JSON.stringify(out));
@@ -154,4 +244,5 @@ console.log(
 );
 const widths = {};
 for (const r of out.roads.filter((r) => r.drivable)) widths[r.width] = (widths[r.width] ?? 0) + 1;
+console.log(`3D BAG buildings ${bagBuildings.length} (pitched ${bagBuildings.filter((b) => b.ridge).length}), city trees ${out.cityTrees.length}`);
 console.log('drivable road widths (m: count):', JSON.stringify(widths));

@@ -2,7 +2,18 @@
 // Coordinates are metres from the map centre: [x east, z south].
 export type Pt = [number, number];
 export interface Road { name: string; kind: string; drivable: boolean; width: number; lanes: number; oneway?: boolean; bridge?: boolean; tunnel?: boolean; pts: Pt[] }
-export interface Building { h: number; type: string; color?: string; roof?: string; pts: Pt[] }
+export interface Building {
+  h: number; // typical roof height above ground (m)
+  type: string;
+  year?: number; // year built (3D BAG)
+  floors?: number;
+  eave?: number; // pitched roofs: wall height and ridge height
+  ridge?: number;
+  color?: string;
+  roof?: string;
+  pts: Pt[];
+}
+export interface CityTree { p: Pt; genus: string; species: string; year: number }
 export interface MapData {
   center: { lat: number; lon: number };
   roads: Road[];
@@ -14,6 +25,7 @@ export interface MapData {
   woods: { pts: Pt[] }[];
   trees: Pt[];
   treeRows: { pts: Pt[] }[];
+  cityTrees?: CityTree[];
   stations: { name: string; p: Pt }[];
 }
 

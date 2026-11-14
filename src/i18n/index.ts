@@ -4,11 +4,13 @@ const dictionaries = {
     loading: 'Overvecht laden…',
     hintKeys: 'Pijltjes / WASD = rijden · Spatie = handrem · R = auto rechtzetten',
     otherLang: 'EN',
+    splash: 'Plons! De auto zinkt…',
   },
   en: {
     loading: 'Loading Overvecht…',
     hintKeys: 'Arrows / WASD = drive · Space = handbrake · R = reset car',
     otherLang: 'NL',
+    splash: 'Splash! The car is sinking…',
   },
 } as const;
 

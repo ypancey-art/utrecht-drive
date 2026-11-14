@@ -111,6 +111,41 @@ export class Car {
     this.vehicle.updateVehicle(dt);
   }
 
+  /** Sinking in water: physics off, the car drifts, tips nose-down and goes under. */
+  sinking = 0; // seconds since the car hit the water (0 = not sinking)
+  private sinkVel = { x: 0, z: 0 };
+  startSinking() {
+    const v = this.body.linvel();
+    this.sinkVel = { x: v.x * 0.5, z: v.z * 0.5 };
+    this.sinking = 0.0001;
+    this.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+  }
+  updateSinking(dt: number) {
+    this.sinking += dt;
+    const p = this.body.translation();
+    const drag = Math.exp(-dt * 1.5);
+    this.sinkVel.x *= drag;
+    this.sinkVel.z *= drag;
+    const y = Math.max(-2.6, p.y - dt * (0.4 + this.sinking * 0.5));
+    this.body.setNextKinematicTranslation({ x: p.x + this.sinkVel.x * dt, y, z: p.z + this.sinkVel.z * dt });
+    // Tip the nose down (rotate about the car's own sideways axis).
+    const r = this.body.rotation();
+    const a = Math.min(this.sinking, 2) * 0.12 * dt;
+    const s = Math.sin(a / 2), c = Math.cos(a / 2);
+    // q * (rotation about local z by -a)
+    const qz = -s;
+    this.body.setNextKinematicRotation({
+      x: r.w * 0 + r.x * c + r.y * qz - r.z * 0,
+      y: r.w * 0 - r.x * qz + r.y * c + r.z * 0,
+      z: r.w * qz + r.x * 0 - r.y * 0 + r.z * c,
+      w: r.w * c - r.x * 0 - r.y * 0 - r.z * qz,
+    });
+  }
+  stopSinking() {
+    this.sinking = 0;
+    this.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+  }
+
   /** True if the car is lying on its side or roof. */
   get flipped() {
     const r = this.body.rotation();

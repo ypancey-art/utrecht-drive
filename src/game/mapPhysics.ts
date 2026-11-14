@@ -27,7 +27,7 @@ export function buildMapPhysics(world: RAPIER.World, map: MapData, trees: Tree[]
 
   // Tree trunks.
   for (const t of trees) {
-    world.createCollider(RAPIER.ColliderDesc.cylinder(2, 0.3 * t.scale).setTranslation(t.x, 2, t.z), fixed);
+    world.createCollider(RAPIER.ColliderDesc.cylinder(2, Math.max(0.1, t.h / 75)).setTranslation(t.x, 2, t.z), fixed);
   }
 
   // Invisible walls around the playable area.

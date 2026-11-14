@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { Building, MapData, Pt, Road } from '../game/mapData';
+import type { MapData, Pt, Road } from '../game/mapData';
+import { buildBuildings } from './buildingMeshes';
 import { MAP_HALF_SIZE } from '../game/mapData';
 import { palette } from './palette';
 
@@ -102,115 +103,55 @@ function polygons(list: { pts: Pt[] }[]): THREE.BufferGeometry | null {
   return geos.length ? mergeGeometries(geos) : null;
 }
 
-/** Tiling window texture: one window per 3.2 m bay and 3 m floor. White = wall (tinted by vertex colour). */
-function windowTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#ffffff';
-  g.fillRect(0, 0, 64, 64);
-  g.fillStyle = '#e4e4e4';
-  g.fillRect(0, 58, 64, 6); // floor band
-  g.fillStyle = '#3c4a5a';
-  g.fillRect(14, 16, 36, 30); // glass
-  g.fillStyle = '#6d8296';
-  g.fillRect(14, 16, 36, 7); // sky reflection
-  g.fillStyle = '#f2f2f2';
-  g.fillRect(31, 16, 2, 30); // frame
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
+/** Railway: gravel bed, sleepers and two steel rails per track. */
+function railways(rails: { pts: Pt[] }[]): THREE.Group {
+  const group = new THREE.Group();
+  const bed = ribbons(rails.map((r) => ({ pts: r.pts, width: 3.2 })));
+  const bedMesh = flatMesh(bed, palette.ballast, LAYER.rail);
+  if (bedMesh) group.add(bedMesh);
 
-function parseColor(value: string | undefined, fallback: number, out: THREE.Color) {
-  out.setHex(fallback);
-  if (!value) return out;
-  try {
-    return out.copy(new THREE.Color().setStyle(value, THREE.SRGBColorSpace));
-  } catch {
-    return out;
-  }
-}
-
-/** Buildings: walls with windows + roofs, merged into two draw calls. */
-function buildings(list: Building[]): THREE.Group {
-  const wall = { pos: [] as number[], nor: [] as number[], uv: [] as number[], col: [] as number[] };
-  const roof = { pos: [] as number[], nor: [] as number[], col: [] as number[] };
-  const wc = new THREE.Color(), rc = new THREE.Color();
-  const BAY = 3.2, FLOOR = 3;
-
-  list.forEach((b, idx) => {
-    const ring = openRing(b.pts);
-    if (ring.length < 3) return;
-    const h = b.h;
-    const small = h <= 4;
-    const isHouse = /house|terrace|detached|bungalow/.test(b.type) || (h <= 8 && !small);
-    const walls = h > 13 ? palette.flats : isHouse ? palette.houses : [...palette.flats, ...palette.houses];
-    parseColor(b.color, walls[idx % walls.length], wc);
-    parseColor(b.roof, (isHouse ? palette.roofHouse : palette.roofFlat)[idx % 3], rc);
-
-    // Signed area tells us which way the ring winds, so normals point outwards.
-    let area = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const [x0, z0] = ring[i], [x1, z1] = ring[(i + 1) % ring.length];
-      area += x0 * z1 - x1 * z0;
-    }
-    const sign = area > 0 ? 1 : -1;
-    let u = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % ring.length];
+  const GAUGE = 1.435, SPACING = 0.9;
+  const sleepers: THREE.Matrix4[] = [];
+  const steel: number[] = [];
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+  const one = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3();
+  for (const { pts } of rails) {
+    let carry = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
       const len = Math.hypot(bx - ax, bz - az);
       if (len < 0.01) continue;
-      const nx = (sign * (bz - az)) / len, nz = (sign * -(bx - ax)) / len;
-      const u0 = small ? 0.02 : u / BAY, u1 = small ? 0.02 : (u + len) / BAY;
-      const v1 = small ? 0.02 : h / FLOOR;
-      // Two triangles, wound so the front faces outwards (normal n).
-      const quad = [[ax, 0, az, u0, 0], [bx, 0, bz, u1, 0], [bx, h, bz, u1, v1], [ax, h, az, u0, v1]];
-      const order = sign > 0 ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3];
-      for (const k of order) {
-        const [x, y, z, uu, vv] = quad[k];
-        wall.pos.push(x, y, z);
-        wall.nor.push(nx, 0, nz);
-        wall.uv.push(uu, vv);
-        wall.col.push(wc.r, wc.g, wc.b);
-      }
-      u += len;
-    }
-
-    const contour = ring.map(([x, z]) => new THREE.Vector2(x, z));
-    for (const [a, bb, c] of THREE.ShapeUtils.triangulateShape(contour, [])) {
-      const p = [contour[a], contour[bb], contour[c]];
-      // Make sure the triangle faces up.
-      const cross = (p[1].x - p[0].x) * (p[2].y - p[0].y) - (p[1].y - p[0].y) * (p[2].x - p[0].x);
-      if (cross > 0) p.reverse();
-      for (const v of p) {
-        roof.pos.push(v.x, h, v.y);
-        roof.nor.push(0, 1, 0);
-        roof.col.push(rc.r, rc.g, rc.b);
+      const ux = (bx - ax) / len, uz = (bz - az) / len;
+      q.setFromAxisAngle(up, Math.atan2(-uz, ux));
+      let d = carry;
+      for (; d < len; d += SPACING) sleepers.push(m.compose(p.set(ax + ux * d, 0.06, az + uz * d), q, one).clone());
+      carry = d - len;
+      // Two rails as thin raised boxes (top + both sides).
+      for (const side of [-1, 1]) {
+        const ox = -uz * side * (GAUGE / 2), oz = ux * side * (GAUGE / 2);
+        const w = 0.04, H = 0.17;
+        const x0 = ax + ox, z0 = az + oz, x1 = bx + ox, z1 = bz + oz;
+        const sx = -uz * w, sz = ux * w;
+        const quad = (a: number[], b: number[], c: number[], d2: number[]) => steel.push(...a, ...b, ...c, ...a, ...c, ...d2);
+        quad([x0 + sx, H, z0 + sz], [x1 + sx, H, z1 + sz], [x1 - sx, H, z1 - sz], [x0 - sx, H, z0 - sz]);
+        quad([x0 + sx, 0.05, z0 + sz], [x1 + sx, 0.05, z1 + sz], [x1 + sx, H, z1 + sz], [x0 + sx, H, z0 + sz]);
+        quad([x0 - sx, 0.05, z0 - sz], [x1 - sx, 0.05, z1 - sz], [x1 - sx, H, z1 - sz], [x0 - sx, H, z0 - sz]);
       }
     }
-  });
-
-  const wg = new THREE.BufferGeometry();
-  wg.setAttribute('position', new THREE.Float32BufferAttribute(wall.pos, 3));
-  wg.setAttribute('normal', new THREE.Float32BufferAttribute(wall.nor, 3));
-  wg.setAttribute('uv', new THREE.Float32BufferAttribute(wall.uv, 2));
-  wg.setAttribute('color', new THREE.Float32BufferAttribute(wall.col, 3));
-  const rg = new THREE.BufferGeometry();
-  rg.setAttribute('position', new THREE.Float32BufferAttribute(roof.pos, 3));
-  rg.setAttribute('normal', new THREE.Float32BufferAttribute(roof.nor, 3));
-  rg.setAttribute('color', new THREE.Float32BufferAttribute(roof.col, 3));
-
-  const wallMesh = new THREE.Mesh(wg, new THREE.MeshLambertMaterial({ vertexColors: true, map: windowTexture() }));
-  const roofMesh = new THREE.Mesh(rg, new THREE.MeshLambertMaterial({ vertexColors: true }));
-  const group = new THREE.Group();
-  for (const m of [wallMesh, roofMesh]) {
-    m.castShadow = true;
-    m.receiveShadow = true;
-    group.add(m);
   }
+  const sleeperMesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.25, 0.12, 2.5),
+    new THREE.MeshLambertMaterial({ color: palette.sleeper }),
+    Math.max(1, sleepers.length),
+  );
+  sleepers.forEach((mat, i) => sleeperMesh.setMatrixAt(i, mat));
+  sleeperMesh.count = sleepers.length;
+  sleeperMesh.receiveShadow = true;
+  const rg = new THREE.BufferGeometry();
+  rg.setAttribute('position', new THREE.Float32BufferAttribute(steel, 3));
+  rg.computeVertexNormals();
+  const railMesh = new THREE.Mesh(rg, new THREE.MeshLambertMaterial({ color: palette.steel, side: THREE.DoubleSide }));
+  group.add(sleeperMesh, railMesh);
   return group;
 }
 
@@ -238,13 +179,13 @@ export function buildMapMeshes(map: MapData): THREE.Group {
   const water = [polygons(map.water), ribbons(map.waterways)].filter(Boolean) as THREE.BufferGeometry[];
   if (water.length) add(flatMesh(mergeGeometries(water.map((g) => (g.index ? g.toNonIndexed() : g))), palette.water, LAYER.water));
   add(flatMesh(ribbons(map.roads.filter((r) => !r.drivable)), palette.path, LAYER.path));
-  add(flatMesh(ribbons(map.rails.map((r) => ({ pts: r.pts, width: 3 }))), palette.rail, LAYER.rail));
+  add(railways(map.rails));
   // Pavements: a wider light strip under the bigger streets.
   const paved = streets.filter((r) => r.kind !== 'service' && r.width >= 4.5);
   add(flatMesh(ribbons(paved.map((r) => ({ pts: r.pts, width: r.width + 3.5 }))), palette.pavement, LAYER.pavement));
   add(flatMesh(ribbons(streets), palette.road, LAYER.road));
   add(flatMesh(laneMarkings(streets), palette.marking, LAYER.marking));
-  add(buildings(map.buildings));
+  add(buildBuildings(map.buildings));
   for (const s of map.stations) add(stationMarker(s.name, s.p[0], s.p[1]));
   return group;
 }

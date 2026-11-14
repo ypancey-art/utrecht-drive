@@ -2,7 +2,30 @@
 // and deterministic (seeded), so every player sees the same Overvecht.
 import type { MapData, Pt } from './mapData';
 
-export interface Tree { x: number; z: number; scale: number; kind: 0 | 1 | 2 } // 0 round, 1 tall round, 2 pine
+/** kind: 0 round, 1 narrow, 2 conifer, 3 willow (wide, weeping). h = height, crown = crown diameter (m). */
+export interface Tree { x: number; z: number; h: number; crown: number; kind: 0 | 1 | 2 | 3 }
+
+// Typical full-grown height (m), crown width as a fraction of height, and shape, per genus.
+const GENUS: Record<string, [number, number, Tree['kind']]> = {
+  Acer: [18, 0.6, 0], Tilia: [22, 0.55, 0], Ulmus: [20, 0.6, 0], Salix: [15, 0.85, 3], Fraxinus: [22, 0.6, 0],
+  Prunus: [8, 0.85, 0], Quercus: [22, 0.65, 0], Alnus: [16, 0.45, 1], Platanus: [25, 0.65, 0], Sorbus: [10, 0.5, 0],
+  Betula: [16, 0.45, 1], Carpinus: [14, 0.55, 0], Pyrus: [10, 0.45, 1], Robinia: [18, 0.55, 0], Malus: [7, 0.85, 0],
+  Magnolia: [7, 0.9, 0], Crataegus: [7, 0.8, 0], Liquidambar: [16, 0.5, 1], Populus: [28, 0.4, 1], Ginkgo: [15, 0.4, 1],
+  Gleditsia: [16, 0.65, 0], Aesculus: [20, 0.65, 0], Fagus: [22, 0.7, 0], Styphnolobium: [15, 0.7, 0],
+  Ailanthus: [18, 0.6, 0], Zelkova: [18, 0.65, 0], Ostrya: [14, 0.6, 0], Amelanchier: [6, 0.8, 0],
+  Pinus: [18, 0.45, 2], Picea: [20, 0.35, 2], Abies: [20, 0.35, 2], Taxodium: [20, 0.35, 2],
+  Metasequoia: [22, 0.3, 2], Taxus: [8, 0.7, 2], Larix: [20, 0.35, 2],
+};
+const COLUMNAR = /fastigiata|columnar|pyramidal|italica|erecta|obelisk|streetwise/i;
+
+/** Estimated size from species and age: height grows towards the species maximum. */
+function cityTreeSize(genus: string, species: string, year: number, rand: () => number) {
+  const [maxH, ratio, kind] = GENUS[genus] ?? [14, 0.6, 0];
+  const age = year > 1800 ? Math.max(2, 2026 - year) : 30;
+  const h = Math.max(3, maxH * (1 - Math.exp(-age / 22)) * (0.9 + rand() * 0.2));
+  const narrow = COLUMNAR.test(species);
+  return { h, crown: Math.max(1.5, h * (narrow ? 0.3 : ratio)), kind: narrow ? 1 : kind };
+}
 export interface Lamp { x: number; z: number; dirX: number; dirZ: number } // dir = towards the road
 
 function rng(seed: number) {
@@ -86,14 +109,23 @@ export function placeScenery(map: MapData) {
       for (let k = 0; k < n; k++) spots.push([ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n]);
     }
   }
-  scatter(map.woods, 1 / 70, rand, spots);
-  scatter(map.green, 1 / 900, rand, spots);
+  const city = map.cityTrees ?? [];
+  // With the city register, only fill woods lightly (private/woodland trees aren't all in it).
+  scatter(map.woods, city.length ? 1 / 160 : 1 / 70, rand, spots);
+  if (!city.length) scatter(map.green, 1 / 900, rand, spots);
 
   const trees: Tree[] = [];
+  for (const t of city) {
+    const [x, z] = t.p;
+    if (grid.edgeDistance(x, z) < 0.5) continue;
+    trees.push({ x, z, ...cityTreeSize(t.genus, t.species, t.year, rand) });
+  }
   for (const [x, z] of spots) {
     if (grid.edgeDistance(x, z) < 1.5) continue; // keep roads and paths clear
     const r = rand();
-    trees.push({ x, z, scale: 0.75 + rand() * 0.6, kind: r < 0.6 ? 0 : r < 0.85 ? 1 : 2 });
+    const h = 9 + rand() * 9;
+    const kind = r < 0.7 ? 0 : r < 0.85 ? 1 : 2;
+    trees.push({ x, z, h, crown: h * (kind === 0 ? 0.6 : 0.4), kind });
   }
 
   // Street lights on one side of the bigger named roads, about every 35 m.

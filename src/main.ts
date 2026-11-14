@@ -7,6 +7,7 @@ import { Input } from './game/input';
 import { buildMapMeshes } from './art/mapMeshes';
 import { buildTrees, buildLamps } from './art/sceneryMeshes';
 import { placeScenery } from './game/scenery';
+import { WaterMap } from './game/water';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { buildCarMesh } from './art/carMesh';
 import { palette } from './art/palette';
@@ -18,6 +19,7 @@ const speedEl = $('speed-value');
 const streetEl = $('street');
 const hintEl = $('hint');
 const langBtn = $<HTMLButtonElement>('lang');
+const toastEl = $('toast');
 
 function applyTexts() {
   loadingEl.textContent = t('loading');
@@ -74,6 +76,7 @@ async function start() {
   world.timestep = 1 / 60;
   buildMapPhysics(world, map, scenery.trees);
 
+  const water = new WaterMap(map);
   const car = new Car(world);
   const carMesh = buildCarMesh();
   scene.add(carMesh.body, ...carMesh.wheels);
@@ -90,7 +93,20 @@ async function start() {
   spawned = true;
 
   const input = new Input($('touch'));
-  input.onReset = spawn;
+  input.onReset = () => {
+    if (car.sinking) {
+      car.stopSinking();
+      toastEl.textContent = '';
+    }
+    spawn();
+  };
+
+  // Testing aid: ?at=x,z[,heading in degrees] starts the car at a map position.
+  const at = new URLSearchParams(location.search).get('at')?.split(',').map(Number);
+  if (at && at.length >= 2 && at.every(Number.isFinite)) {
+    const a = ((at[2] ?? 0) * Math.PI) / 180;
+    car.place(at[0], at[1], Math.cos(a), Math.sin(a));
+  }
 
   // --- Resize ---
   const resize = () => {
@@ -121,10 +137,26 @@ async function start() {
     acc += dt;
     const controls = input.read();
     while (acc >= world.timestep) {
-      car.update(controls, world.timestep);
+      if (car.sinking) car.updateSinking(world.timestep);
+      else car.update(controls, world.timestep);
       world.step();
       acc -= world.timestep;
     }
+
+    // Into the water (but not on a road or bridge): the car sinks, then comes back on the road.
+    if (!car.sinking) {
+      const cp = car.body.translation();
+      if (cp.y < 2 && water.contains(cp.x, cp.z) && scenery.grid.edgeDistance(cp.x, cp.z) > 0.3) {
+        car.startSinking();
+        toastEl.textContent = t('splash');
+      }
+    } else if (car.sinking > 3) {
+      car.stopSinking();
+      spawn();
+      toastEl.textContent = '';
+    }
+
+    carMesh.setOpacity(car.sinking ? Math.max(0, 1 - car.sinking / 2.5) : 1);
 
     // Auto-reset when the car stays flipped.
     flippedTime = car.flipped ? flippedTime + dt : 0;

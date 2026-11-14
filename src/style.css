@@ -22,3 +22,4 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9ec9e8; fon
 .pad .brake { background: rgba(190, 50, 50, 0.7); }
 #credit { position: fixed; right: 6px; bottom: 2px; font-size: 10px; color: rgba(255,255,255,0.8); pointer-events: none; }
 .touch-device #credit { bottom: auto; top: 60px; }
+#toast { position: fixed; top: 35%; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.6); pointer-events: none; text-align: center; }
