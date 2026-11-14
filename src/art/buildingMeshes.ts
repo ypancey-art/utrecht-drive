@@ -25,10 +25,24 @@ const bricks = (g: CanvasRenderingContext2D) => {
   for (let y = 6; y < 128; y += 8) g.fillRect(0, y, 128, 1);
 };
 
+/** Gallery/balcony flat: infill panel colour + railing colour. */
+function flatFacade(g: CanvasRenderingContext2D, infill: string, railing: string) {
+  g.fillStyle = infill;
+  g.fillRect(0, 0, 128, 92);
+  glass(g, 10, 22, 50, 44, '#e9e6df');
+  glass(g, 70, 22, 48, 44, '#e9e6df');
+  g.fillStyle = '#f2f0ea';
+  g.fillRect(0, 92, 128, 36); // concrete balcony band
+  g.fillStyle = railing;
+  g.fillRect(0, 86, 128, 4);
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  g.fillRect(0, 90, 128, 2);
+}
+
 const STYLES: Record<string, Style> = {
   prewar: {
     bay: 2.6, floor: 3.2,
-    walls: [0xa0523c, 0x8f4a35, 0xb06048, 0x9a5a44],
+    walls: [0x7d6a58, 0x8a7560, 0x6f6150, 0x86705c, 0x9a6a50],
     roofs: [0x8e4430, 0x9b4a32, 0x4a3a35],
     draw: (g) => {
       bricks(g);
@@ -39,17 +53,37 @@ const STYLES: Record<string, Style> = {
     },
   },
   flat: {
+    // White concrete balcony band, dark brown infill panels, red railing (like the Rode Flat).
     bay: 3.6, floor: 2.8,
-    walls: [0xe6e1d6, 0xd8d4cb, 0xcfcac0, 0xe2d9c5],
+    walls: [0xffffff, 0xf3f1ec],
+    roofs: [0x6f6f72],
+    draw: (g) => flatFacade(g, '#5b4a46', '#b23a2e'),
+  },
+  flatBlue: {
+    bay: 3.6, floor: 2.8,
+    walls: [0xffffff, 0xeef0f2],
+    roofs: [0x6f6f72],
+    draw: (g) => flatFacade(g, '#56697a', '#d9dde0'),
+  },
+  flatWarm: {
+    bay: 3.6, floor: 2.8,
+    walls: [0xffffff, 0xf6f1e6],
+    roofs: [0x6f6f72],
+    draw: (g) => flatFacade(g, '#9a6b3f', '#2f3a44'),
+  },
+  panel: {
+    // 1960s-80s schools and shops: blue panels, yellow piers, white window frames (like school Op Dreef).
+    bay: 3.4, floor: 3.3,
+    walls: [0xffffff],
     roofs: [0x6f6f72],
     draw: (g) => {
-      glass(g, 10, 30, 108, 54, '#9a9a96'); // window band
-      g.fillStyle = '#9a9a96';
-      for (const x of [46, 82]) g.fillRect(x, 30, 3, 54);
-      g.fillStyle = '#ffffff';
-      g.fillRect(0, 94, 128, 34); // gallery balustrade panel
-      g.fillStyle = 'rgba(0,0,0,0.25)';
-      g.fillRect(0, 92, 128, 3);
+      g.fillStyle = '#2f62b0';
+      g.fillRect(0, 0, 128, 128);
+      g.fillStyle = '#e2b437';
+      g.fillRect(0, 0, 14, 128);
+      glass(g, 22, 14, 98, 80, '#f4f4f0');
+      g.fillStyle = '#f4f4f0';
+      g.fillRect(70, 14, 3, 80);
     },
   },
   house60: {
@@ -74,7 +108,7 @@ const STYLES: Record<string, Style> = {
   },
   church: {
     bay: 3.2, floor: 6,
-    walls: [0x9a5b45, 0x8c5240, 0xa86a52],
+    walls: [0x6e5e4e, 0x75634f, 0x7a6450],
     roofs: [0x3d4248, 0x47413d],
     draw: (g) => {
       bricks(g);
@@ -107,13 +141,20 @@ const STYLES: Record<string, Style> = {
   },
 };
 
+function footprintArea(pts: Pt[]) {
+  let a = 0;
+  for (let i = 0; i < pts.length - 1; i++) a += pts[i][0] * pts[i + 1][1] - pts[i + 1][0] * pts[i][1];
+  return Math.abs(a / 2);
+}
+
 function styleFor(b: Building): keyof typeof STYLES {
   if (b.church) return b.church;
   const year = b.year ?? 0;
   const floors = b.floors || Math.round(b.h / 3);
-  if (!year) return b.h > 12 ? 'flat' : 'house60';
+  if (!year) return b.h > 12 ? 'flatBlue' : 'house60';
   if (year < 1945) return 'prewar';
-  if (year < 1976) return floors >= 4 || b.h > 11 ? 'flat' : 'house60';
+  if (year < 1986 && year >= 1955 && !b.lod && b.h <= 10 && footprintArea(b.pts) > 350) return 'panel';
+  if (year < 1976) return floors >= 4 || b.h > 11 ? (['flat', 'flatBlue', 'flatWarm'] as const)[Math.abs(Math.round(b.pts[0][0] * 3 + b.pts[0][1])) % 3] : 'house60';
   if (year < 1996) return 'eighties';
   return 'modern';
 }
@@ -207,9 +248,12 @@ export function buildBuildings(list: Building[], lod3d?: { pos: Int16Array; idx:
     wc.setHex(style.walls[idx % style.walls.length]);
     rc.setHex(pitched ? style.roofs[idx % style.roofs.length] : [0x6f6f72, 0x7d7a74, 0x5d6066][idx % 3]);
     if (b.roofColor !== undefined) {
-      // Real roof colour from the aerial photo (brightened a little: photos include shade).
+      // Real roof colour from the aerial photo. Aerial photos look hazy, so make it
+      // a bit richer and darker.
       rc.setHex(b.roofColor);
-      rc.multiplyScalar(1.2);
+      const hsl = { h: 0, s: 0, l: 0 };
+      rc.getHSL(hsl);
+      rc.setHSL(hsl.h, Math.min(1, hsl.s * 1.6), hsl.l * 0.8);
     }
     const wb = walls.get(styleName) ?? walls.set(styleName, new Builder()).get(styleName)!;
 
