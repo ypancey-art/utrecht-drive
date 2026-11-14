@@ -154,13 +154,27 @@ export function placeScenery(map: MapData) {
 
   const water = new WaterMap(map);
   const walls = new BuildingGrid(map);
+  // Railway tracks (centre lines), to keep trees off the gravel bed.
+  const rails = map.rails.flatMap(({ pts }) => pts.slice(1).map((b, i) => [pts[i][0], pts[i][1], b[0], b[1]]));
+  const railDistance = (x: number, z: number) => {
+    let best = Infinity;
+    for (const [ax, az, bx, bz] of rails) {
+      if (x < Math.min(ax, bx) - 30 || x > Math.max(ax, bx) + 30 || z < Math.min(az, bz) - 30 || z > Math.max(az, bz) + 30) continue;
+      const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1;
+      const s = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+      best = Math.min(best, Math.hypot(x - ax - dx * s, z - az - dz * s));
+    }
+    return best;
+  };
   const trees: Tree[] = [];
   // No trees in water or inside buildings; crowns may not grow through walls.
   const add = (t: Tree) => {
     if (water.contains(t.x, t.z)) return;
     const wall = walls.wallDistance(t.x, t.z);
     if (wall < 0.4) return;
-    const maxCrown = 2 * (wall + 0.6);
+    const rail = railDistance(t.x, t.z);
+    if (rail < 2.5) return; // on or next to the tracks
+    const maxCrown = Math.min(2 * (wall + 0.6), 2 * (rail - 1.6));
     if (t.crown > maxCrown) {
       t.h *= Math.max(0.6, maxCrown / t.crown);
       t.crown = maxCrown;
