@@ -8,7 +8,8 @@ export class RoadGraph {
   private grid = new Map<string, number[]>();
   private cell = 30;
 
-  constructor(map: MapData) {
+  /** directed: follow one-way streets (for normal traffic; the police ignore them). */
+  constructor(map: MapData, directed = false) {
     const id = (p: Pt) => {
       const k = `${p[0].toFixed(1)},${p[1].toFixed(1)}`;
       let i = this.index.get(k);
@@ -33,7 +34,7 @@ export class RoadGraph {
           const cur = id(s === n ? r.pts[k] : [ax + ((bx - ax) * s) / n, az + ((bz - az) * s) / n]);
           if (cur !== prev) {
             this.edges[prev].push(cur);
-            this.edges[cur].push(prev);
+            if (!(directed && r.oneway)) this.edges[cur].push(prev);
           }
           prev = cur;
         }

@@ -13,6 +13,7 @@ import { placePlaygrounds } from './game/playgrounds';
 import { buildPlaygrounds } from './art/playgroundMeshes';
 import { RoadGraph } from './game/roadGraph';
 import { Police, STAR_LEVELS } from './game/police';
+import { Traffic } from './game/traffic';
 import { buildMissions, MissionRunner, MISSION_SIZE, REACH_RADIUS } from './game/missions';
 import { CARS, POLICE, carById, upgradedStats, armourFactor } from './game/cars';
 import { loadProgress, saveProgress, upgradesFor } from './game/progress';
@@ -185,6 +186,13 @@ async function start() {
   });
   police.inWater = (x, z) => water.contains(x, z) && scenery.grid.edgeDistance(x, z) > 0.3;
 
+  // --- Traffic ---
+  const traffic = new Traffic(world, new RoadGraph(map, true), CARS, (spec, color) => {
+    const m = buildCarModel(spec, color);
+    scene.add(m.body, ...m.wheels);
+    return { sync: (c) => syncModel(m, c), dispose: () => scene.remove(m.body, ...m.wheels) };
+  }, isTouch ? 8 : 14);
+
   // --- Missions ---
   const runner = new MissionRunner(buildMissions(map));
   const markers = new THREE.Group();
@@ -310,6 +318,7 @@ async function start() {
         if (car.sinking) car.updateSinking(world.timestep);
         else car.update(controls, world.timestep);
         police.step(world.timestep, car);
+        traffic.step(world.timestep, car, police.units.map((u) => u.car));
         world.step(events);
         acc -= world.timestep;
       }
@@ -341,6 +350,8 @@ async function start() {
         spawn();
         flippedTime = 0;
       }
+
+      traffic.update(dt, car, police.units.map((u) => u.car));
 
       // Police: chase, escape or caught.
       const pr = police.update(dt, car);
@@ -456,7 +467,7 @@ async function start() {
   }
 
   // Handy for debugging in the browser console.
-  (window as unknown as { game: unknown }).game = { car: () => car, world, map, scene, camera, police, runner, progress };
+  (window as unknown as { game: unknown }).game = { car: () => car, world, map, scene, camera, police, runner, progress, traffic };
 }
 
 start().catch((err) => {
