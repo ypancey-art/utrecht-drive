@@ -39,6 +39,7 @@ Realism pass (2026-11-14):
 - [x] Trees (923 OSM trees + rows + scattered in woods/parks) with trunk colliders; street lights on named roads
 - [x] Sky dome (three Sky) + ACES tone mapping; car no longer creeps when stopped
 - [x] Pushed to GitHub: git@github.com:ypancey-art/utrecht-drive.git (public)
+- [x] GitHub Pages deploy on push to main → https://ypancey-art.github.io/utrecht-drive/ (needs Settings → Pages → Source: GitHub Actions)
 
 Known gaps / next steps:
 - Bridges and tunnels are flat (OSM `bridge`/`tunnel` ignored; tunnel roads are hidden)
