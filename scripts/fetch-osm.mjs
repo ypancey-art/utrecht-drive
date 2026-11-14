@@ -148,7 +148,7 @@ const local = (lon, lat) => [
 /** GeoJSON coordinate pair: [lon, lat], or [lat, lon] if a server flipped the axes. */
 const fromGeo = ([a, b]) => (a > 40 ? local(b, a) : local(a, b));
 
-const out = { center: CENTER, roads: [], buildings: [], water: [], waterways: [], rails: [], green: [], woods: [], trees: [], treeRows: [], stations: [] };
+const out = { center: CENTER, roads: [], buildings: [], water: [], waterways: [], rails: [], green: [], woods: [], trees: [], treeRows: [], playgrounds: [], stations: [] };
 for (const el of osm.elements) {
   if (el.type === 'node' && el.tags?.railway === 'station') {
     out.stations.push({ name: el.tags.name ?? '', p: nodes.get(el.id) });
@@ -191,7 +191,7 @@ for (const el of osm.elements) {
     if (t['roof:colour']) b.roof = t['roof:colour'];
     out.buildings.push(b);
   } else if (t.railway === 'rail') {
-    out.rails.push({ pts });
+    out.rails.push({ pts, bridge: t.bridge === 'yes' || undefined });
   } else if (t.natural === 'water') {
     out.water.push({ pts });
   } else if (t.waterway) {
@@ -203,6 +203,7 @@ for (const el of osm.elements) {
     out.woods.push({ pts });
   } else if (t.leisure || t.landuse) {
     out.green.push({ pts });
+    if (t.leisure === 'playground') out.playgrounds.push({ name: t.name ?? '', water: /water/i.test(t.name ?? '') || undefined, pts });
   }
 }
 

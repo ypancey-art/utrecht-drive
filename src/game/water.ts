@@ -24,6 +24,25 @@ export class WaterMap {
     this.decks = decks;
   }
 
+  /** In a pond/canal area or a waterway wider than a ditch (not just a ditch). */
+  inBigWater(x: number, z: number) {
+    for (const l of this.lines) {
+      if (l.hw <= 2.5) continue;
+      const dx = l.bx - l.ax, dz = l.bz - l.az, len2 = dx * dx + dz * dz || 1;
+      const s = Math.max(0, Math.min(1, ((x - l.ax) * dx + (z - l.az) * dz) / len2));
+      if (Math.hypot(x - l.ax - dx * s, z - l.az - dz * s) < l.hw) return true;
+    }
+    return this.polys.some((p) => x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && WaterMap.pip(x, z, p.pts));
+  }
+  private static pip(x: number, z: number, pts: Pt[]) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, zi] = pts[i], [xj, zj] = pts[j];
+      if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
   contains(x: number, z: number) {
     for (const d of this.decks) {
       if (Math.abs(x - d.ax) > 12 + d.width || Math.abs(z - d.az) > 12 + d.width) continue;

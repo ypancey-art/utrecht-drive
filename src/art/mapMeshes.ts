@@ -4,6 +4,7 @@ import type { MapData, Pt, Road } from '../game/mapData';
 import { buildBuildings } from './buildingMeshes';
 import type { RoadGrid } from '../game/scenery';
 import type { WaterMap } from '../game/water';
+import { RAIL_H, RAIL_DECK, type Dyke } from '../game/railway';
 
 export const WATER_Y = -0.7; // water surface sits below street level
 const BED_Y = -1.8;
@@ -110,11 +111,32 @@ function polygons(list: { pts: Pt[] }[]): THREE.BufferGeometry | null {
 }
 
 /** Railway: gravel bed, sleepers and two steel rails per track. */
-function railways(rails: { pts: Pt[] }[]): THREE.Group {
+function railways(rails: { pts: Pt[] }[], dyke: Dyke): THREE.Group {
   const group = new THREE.Group();
-  const bed = ribbons(rails.map((r) => ({ pts: r.pts, width: 3.2 })));
-  const bedMesh = flatMesh(bed, palette.ballast, LAYER.rail);
-  if (bedMesh) group.add(bedMesh);
+  const H = RAIL_H;
+  const mesh = (pos: number[], color: number, side: THREE.Side = THREE.DoubleSide) => {
+    if (!pos.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color, side }));
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+  };
+  mesh(dyke.slopes, palette.dyke);
+  mesh(dyke.tops, palette.ballast);
+  mesh(dyke.walls, palette.bridgeSide);
+  // Railway bridges: concrete deck with low parapets.
+  const deckPos: number[] = [];
+  const dq = (a: number[], b: number[], c: number[], d: number[]) => deckPos.push(...a, ...b, ...c, ...a, ...c, ...d);
+  for (const d of dyke.decks) {
+    const len = Math.hypot(d.bx - d.ax, d.bz - d.az) || 1, nx = (-(d.bz - d.az) / len) * (d.width / 2), nz = ((d.bx - d.ax) / len) * (d.width / 2);
+    const P = (x: number, z: number, s: number, y: number) => [x + nx * s, y, z + nz * s];
+    dq(P(d.ax, d.az, -1, H), P(d.bx, d.bz, -1, H), P(d.bx, d.bz, 1, H), P(d.ax, d.az, 1, H));
+    dq(P(d.ax, d.az, -1, H - RAIL_DECK), P(d.bx, d.bz, -1, H - RAIL_DECK), P(d.bx, d.bz, 1, H - RAIL_DECK), P(d.ax, d.az, 1, H - RAIL_DECK));
+    for (const s2 of [-1, 1]) dq(P(d.ax, d.az, s2, H - RAIL_DECK), P(d.bx, d.bz, s2, H - RAIL_DECK), P(d.bx, d.bz, s2, H + 0.9), P(d.ax, d.az, s2, H + 0.9));
+  }
+  mesh(deckPos, palette.bridgeSide);
 
   const GAUGE = 1.435, SPACING = 0.9;
   const sleepers: THREE.Matrix4[] = [];
@@ -130,18 +152,18 @@ function railways(rails: { pts: Pt[] }[]): THREE.Group {
       const ux = (bx - ax) / len, uz = (bz - az) / len;
       q.setFromAxisAngle(up, Math.atan2(-uz, ux));
       let d = carry;
-      for (; d < len; d += SPACING) sleepers.push(m.compose(p.set(ax + ux * d, 0.06, az + uz * d), q, one).clone());
+      for (; d < len; d += SPACING) sleepers.push(m.compose(p.set(ax + ux * d, H + 0.06, az + uz * d), q, one).clone());
       carry = d - len;
       // Two rails as thin raised boxes (top + both sides).
       for (const side of [-1, 1]) {
         const ox = -uz * side * (GAUGE / 2), oz = ux * side * (GAUGE / 2);
-        const w = 0.04, H = 0.17;
+        const w = 0.04, RH = H + 0.17, RB = H + 0.05;
         const x0 = ax + ox, z0 = az + oz, x1 = bx + ox, z1 = bz + oz;
         const sx = -uz * w, sz = ux * w;
         const quad = (a: number[], b: number[], c: number[], d2: number[]) => steel.push(...a, ...b, ...c, ...a, ...c, ...d2);
-        quad([x0 + sx, H, z0 + sz], [x1 + sx, H, z1 + sz], [x1 - sx, H, z1 - sz], [x0 - sx, H, z0 - sz]);
-        quad([x0 + sx, 0.05, z0 + sz], [x1 + sx, 0.05, z1 + sz], [x1 + sx, H, z1 + sz], [x0 + sx, H, z0 + sz]);
-        quad([x0 - sx, 0.05, z0 - sz], [x1 - sx, 0.05, z1 - sz], [x1 - sx, H, z1 - sz], [x0 - sx, H, z0 - sz]);
+        quad([x0 + sx, RH, z0 + sz], [x1 + sx, RH, z1 + sz], [x1 - sx, RH, z1 - sz], [x0 - sx, RH, z0 - sz]);
+        quad([x0 + sx, RB, z0 + sz], [x1 + sx, RB, z1 + sz], [x1 + sx, RH, z1 + sz], [x0 + sx, RH, z0 + sz]);
+        quad([x0 - sx, RB, z0 - sz], [x1 - sx, RB, z1 - sz], [x1 - sx, RH, z1 - sz], [x0 - sx, RH, z0 - sz]);
       }
     }
   }
@@ -200,8 +222,8 @@ function waterEdges(map: MapData) {
 }
 
 /** Road and path pieces that cross water: these become bridge decks. */
-export function bridgeSegments(map: MapData, water: WaterMap) {
-  const segs: { ax: number; az: number; bx: number; bz: number; width: number }[] = [];
+export function bridgeSegments(map: MapData, water: WaterMap, grid: RoadGrid) {
+  const segs: { ax: number; az: number; bx: number; bz: number; width: number; culvert?: boolean; rails: [boolean, boolean]; drivable: boolean }[] = [];
   for (const r of map.roads) {
     if (r.tunnel) continue;
     for (let i = 0; i < r.pts.length - 1; i++) {
@@ -210,37 +232,56 @@ export function bridgeSegments(map: MapData, water: WaterMap) {
       for (let k = 0; k < n; k++) {
         const x0 = ax + ((bx - ax) * k) / n, z0 = az + ((bz - az) * k) / n;
         const x1 = ax + ((bx - ax) * (k + 1)) / n, z1 = az + ((bz - az) * (k + 1)) / n;
-        if (water.contains((x0 + x1) / 2, (z0 + z1) / 2) || r.bridge) segs.push({ ax: x0, az: z0, bx: x1, bz: z1, width: r.width + BRIDGE_EXTRA });
+        const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+        if (water.contains(mx, mz) || r.bridge) {
+          // Crossing only a narrow ditch: a culvert (flush, no railings).
+          const culvert = !r.bridge && !water.inBigWater(mx, mz);
+          const width = r.width + (culvert ? 1 : BRIDGE_EXTRA);
+          // Railings only on real bridges (paths: only when tagged), never standing on another road.
+          const len = Math.hypot(x1 - x0, z1 - z0) || 1, nx = (-(z1 - z0) / len) * (width / 2), nz = ((x1 - x0) / len) * (width / 2);
+          const wantRails = !culvert && (r.drivable || !!r.bridge);
+          const rails: [boolean, boolean] = [
+            wantRails && grid.edgeDistance(mx + nx, mz + nz) > -0.5,
+            wantRails && grid.edgeDistance(mx - nx, mz - nz) > -0.5,
+          ];
+          segs.push({ ax: x0, az: z0, bx: x1, bz: z1, width, culvert, rails, drivable: r.drivable });
+        }
       }
     }
   }
   return segs;
 }
 
-function bridges(map: MapData, water: WaterMap): THREE.Group {
+function bridges(map: MapData, water: WaterMap, grid: RoadGrid): THREE.Group {
   const g = new THREE.Group();
-  const segs = bridgeSegments(map, water);
+  const segs = bridgeSegments(map, water, grid);
   // Extend each piece a little so neighbouring pieces overlap without gaps.
-  const deck = ribbons(segs.map((s) => {
-    const len = Math.hypot(s.bx - s.ax, s.bz - s.az) || 1, ux = (s.bx - s.ax) / len, uz = (s.bz - s.az) / len;
-    return { pts: [[s.ax - ux * 0.3, s.az - uz * 0.3], [s.bx + ux * 0.3, s.bz + uz * 0.3]] as Pt[], width: s.width };
-  }));
-  if (deck) {
-    deck.translate(0, 0.04, 0);
-    const m = new THREE.Mesh(deck, new THREE.MeshLambertMaterial({ color: palette.bridge }));
+  // Road decks in road colour, drawn just above path decks (where a path deck touches a road).
+  for (const drivable of [false, true]) {
+    const deck = ribbons(segs.filter((s) => s.drivable === drivable).map((s) => {
+      const len = Math.hypot(s.bx - s.ax, s.bz - s.az) || 1, ux = (s.bx - s.ax) / len, uz = (s.bz - s.az) / len;
+      return { pts: [[s.ax - ux * 0.3, s.az - uz * 0.3], [s.bx + ux * 0.3, s.bz + uz * 0.3]] as Pt[], width: s.width };
+    }));
+    if (!deck) continue;
+    deck.translate(0, drivable ? 0.06 : 0.03, 0);
+    const m = new THREE.Mesh(deck, new THREE.MeshLambertMaterial({ color: drivable ? palette.road : palette.path }));
     m.receiveShadow = true;
     g.add(m);
   }
   const sides: [number, number, number, number][] = [];
+  const railed: [number, number, number, number][] = [];
   for (const s of segs) {
     const len = Math.hypot(s.bx - s.ax, s.bz - s.az) || 1;
     const nx = (-(s.bz - s.az) / len) * (s.width / 2), nz = ((s.bx - s.ax) / len) * (s.width / 2);
-    sides.push([s.ax + nx, s.az + nz, s.bx + nx, s.bz + nz], [s.ax - nx, s.az - nz, s.bx - nx, s.bz - nz]);
+    const pair: [number, number, number, number][] = [[s.ax + nx, s.az + nz, s.bx + nx, s.bz + nz], [s.ax - nx, s.az - nz, s.bx - nx, s.bz - nz]];
+    sides.push(...pair);
+    if (s.rails[0]) railed.push(pair[0]);
+    if (s.rails[1]) railed.push(pair[1]);
   }
   const mat = new THREE.MeshLambertMaterial({ color: palette.bridgeSide, side: THREE.DoubleSide });
   const side = walls(sides, BED_Y + 0.4, 0.04);
   if (side) g.add(new THREE.Mesh(side, mat));
-  const rail = walls(sides, 0.04, 1.0);
+  const rail = walls(railed, 0.04, 1.0);
   if (rail) {
     const rm = new THREE.Mesh(rail, new THREE.MeshLambertMaterial({ color: palette.railing, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
     rm.castShadow = true;
@@ -311,7 +352,7 @@ function kerbs(roads: Road[], grid: RoadGrid, water: WaterMap): THREE.Group {
   return g;
 }
 
-export function buildMapMeshes(map: MapData, grid: RoadGrid, water: WaterMap): THREE.Group {
+export function buildMapMeshes(map: MapData, grid: RoadGrid, water: WaterMap, dyke: Dyke): THREE.Group {
   const group = new THREE.Group();
   const size = MAP_HALF_SIZE * 2 + 400;
   const ground = new THREE.PlaneGeometry(size, size).rotateX(-Math.PI / 2);
@@ -321,14 +362,14 @@ export function buildMapMeshes(map: MapData, grid: RoadGrid, water: WaterMap): T
   add(flatMesh(ground, palette.ground, LAYER.ground));
   add(flatMesh(polygons([...map.green, ...map.woods]), palette.green, LAYER.green));
   add(flatMesh(ribbons(map.roads.filter((r) => !r.drivable)), palette.path, LAYER.path));
-  add(railways(map.rails));
+  add(railways(map.rails, dyke));
   // Pavements: a wider light strip under the bigger streets.
   const paved = streets.filter((r) => r.kind !== 'service' && r.width >= 4.5);
   add(flatMesh(ribbons(paved.map((r) => ({ pts: r.pts, width: r.width + 3.5 }))), palette.pavement, LAYER.pavement));
   add(flatMesh(ribbons(streets), palette.road, LAYER.road));
   add(flatMesh(laneMarkings(streets), palette.marking, LAYER.marking));
   add(waterHole(map, water));
-  add(bridges(map, water));
+  add(bridges(map, water, grid));
   add(kerbs(streets, grid, water));
   add(buildBuildings(map.buildings, map.lod3d));
   for (const s of map.stations) add(stationMarker(s.name, s.p[0], s.p[1]));

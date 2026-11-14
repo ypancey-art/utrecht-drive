@@ -23,7 +23,8 @@ export interface MapData {
   buildings: Building[];
   water: { pts: Pt[] }[];
   waterways: { width: number; pts: Pt[] }[];
-  rails: { pts: Pt[] }[];
+  rails: { pts: Pt[]; bridge?: boolean }[];
+  playgrounds: { name: string; water?: boolean; pts: Pt[] }[];
   green: { pts: Pt[] }[];
   woods: { pts: Pt[] }[];
   trees: Pt[];

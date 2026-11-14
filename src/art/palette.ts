@@ -9,6 +9,7 @@ export const palette = {
   marking: 0xf2f2ee,
   path: 0xcdbb9c,
   ballast: 0x8a8178,
+  dyke: 0x7fa65a,
   sleeper: 0x5b4a3e,
   steel: 0x9aa0a6,
   waterBed: 0x1d2f33,

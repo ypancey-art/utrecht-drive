@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { MapData } from './mapData';
 import type { Tree } from './scenery';
+import { RAIL_H, RAIL_DECK, type Dyke } from './railway';
 import { MAP_HALF_SIZE } from './mapData';
 
 /** Static colliders: ground, building walls (one trimesh) and the map edge. */
@@ -8,7 +9,8 @@ export function buildMapPhysics(
   world: RAPIER.World,
   map: MapData,
   trees: Tree[] = [],
-  bridges: { ax: number; az: number; bx: number; bz: number; width: number }[] = [],
+  bridges: { ax: number; az: number; bx: number; bz: number; width: number; rails: [boolean, boolean] }[] = [],
+  dyke?: Dyke,
 ) {
   const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
   const S = MAP_HALF_SIZE + 200;
@@ -37,14 +39,35 @@ export function buildMapPhysics(
 
   // Bridge railings, so cars stay on the bridge.
   for (const b of bridges) {
+    if (!b.rails[0] && !b.rails[1]) continue;
     const len = Math.hypot(b.bx - b.ax, b.bz - b.az);
     if (len < 0.05) continue;
     const ux = (b.bx - b.ax) / len, uz = (b.bz - b.az) / len;
     const yaw = Math.atan2(-uz, ux);
     const rot = { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) };
     for (const side of [-1, 1]) {
+      if (!b.rails[side < 0 ? 1 : 0]) continue;
       const cx = (b.ax + b.bx) / 2 - uz * side * (b.width / 2), cz = (b.az + b.bz) / 2 + ux * side * (b.width / 2);
       world.createCollider(RAPIER.ColliderDesc.cuboid(len / 2 + 0.3, 0.6, 0.1).setTranslation(cx, 0.6, cz).setRotation(rot), fixed);
+    }
+  }
+
+  // Railway dyke (sloped sides + top) and the railway bridges over the streets.
+  if (dyke) {
+    const tri = [...dyke.slopes, ...dyke.tops, ...dyke.walls];
+    if (tri.length) {
+      world.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(tri), Uint32Array.from(tri.map((_, i) => i).filter((i) => i < tri.length / 3))).setFriction(0.8), fixed);
+    }
+    for (const d of dyke.decks) {
+      const len = Math.hypot(d.bx - d.ax, d.bz - d.az);
+      if (len < 0.05) continue;
+      const yaw = Math.atan2(-(d.bz - d.az) / len, (d.bx - d.ax) / len);
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(len / 2 + 0.2, RAIL_DECK / 2, d.width / 2)
+          .setTranslation((d.ax + d.bx) / 2, RAIL_H - RAIL_DECK / 2, (d.az + d.bz) / 2)
+          .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }),
+        fixed,
+      );
     }
   }
 

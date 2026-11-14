@@ -173,8 +173,8 @@ export function placeScenery(map: MapData) {
     const wall = walls.wallDistance(t.x, t.z);
     if (wall < 0.4) return;
     const rail = railDistance(t.x, t.z);
-    if (rail < 2.5) return; // on or next to the tracks
-    const maxCrown = Math.min(2 * (wall + 0.6), 2 * (rail - 1.6));
+    if (rail < 6) return; // on the railway dyke
+    const maxCrown = Math.min(2 * (wall + 0.6), 2 * (rail - 3));
     if (t.crown > maxCrown) {
       t.h *= Math.max(0.6, maxCrown / t.crown);
       t.crown = maxCrown;
