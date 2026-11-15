@@ -97,3 +97,11 @@ Known gaps / next steps:
 - Note: headless screenshots fail while the user's Chrome runs; use the Claude-in-Chrome tab on localhost:5173 instead.
 - [x] Police: menu "Politieachtervolging", +1 star every 25 s free (max 3), escapes raise `heat` (more cars next time, up to 6), escape gives coins
 - [x] Jump ramps (scripts/place-ramps.ts, run last; 10 water + 3 roof). Roofs are solid (LoD roof tris or flat cap). Sinking only when car y < 1.2. Vertical landing impacts don't count as crashes. Test: scripts/cache/ramptest.ts
+- [x] Performance (measured on the user's MacBook, Intel Iris Plus 640, 2 cores): frame 116 ms -> 17 ms, startup ~29 s -> ~6 s.
+  Static meshes split into 200 m tiles (src/art/tiles.ts), max 3 physics steps per frame, dynamic resolution
+  (pixel ratio 0.75-1.5), shadows every other frame, smaller shadow map on weak devices, camera far 760 (sky follows camera),
+  WaterMap + RoadGrid spatial index, faster dyke filter, kerb tops as one geometry, lighter tree/bush geometry.
+  Startup timings print in the console ("startup ...").
+- [x] Tests: `npm test` (node:test + tsx, tests/*.test.ts): maths, streets not blocked, water index, ramps (2 cars),
+  traffic on road, people, police escalation, missions reachable, data sanity. Runs in CI before every deploy.
+  Found+fixed: hedges on service roads, streets under buildings (wall opening 3.8 m), "same kind" problem retry.

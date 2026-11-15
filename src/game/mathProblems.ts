@@ -157,7 +157,8 @@ const CURRICULUM: Record<Grade, Gen[]> = {
 /** A random problem for this grade; pass `sameAs` to get a new problem of the same kind. */
 export function makeProblem(grade: Grade, lang: Lang, sameAs?: string): Problem {
   const gens = CURRICULUM[grade];
-  for (let i = 0; i < 30 && sameAs; i++) {
+  // Some generators make several kinds (e.g. times or divide): keep trying until the kind matches.
+  for (let i = 0; i < 400 && sameAs; i++) {
     const p = pick(gens)(lang);
     if (p.type === sameAs) return p;
   }

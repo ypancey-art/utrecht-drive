@@ -15,6 +15,7 @@ import { buildPlaygrounds } from './art/playgroundMeshes';
 import { RoadGraph } from './game/roadGraph';
 import { Police, STAR_LEVELS } from './game/police';
 import { sound } from './audio/sound';
+import { tileStatic } from './art/tiles';
 import { applyStreetLooks } from './game/streetLooks';
 import { People } from './game/people';
 import { makePersonVisual } from './art/peopleMeshes';
@@ -78,8 +79,18 @@ function syncModel(model: CarModel, car: Car) {
   model.setOpacity(car.sinking ? Math.max(0, Math.min(1, 1 - (car.sinking - 1.6) / 1.4)) : 1);
 }
 
+/** Startup timing (shown in the console as "startup"). */
+const marks: [string, number][] = [];
+let markT = performance.now();
+const mark = (name: string) => {
+  const now = performance.now();
+  marks.push([name, Math.round(now - markT)]);
+  markT = now;
+};
+
 async function start() {
   const [, map] = await Promise.all([RAPIER.init(), loadMap(), loadCarAssets([...CARS, POLICE])]);
+  mark('load files');
   const progress = loadProgress();
   const save = () => {
     saveProgress(progress);
@@ -91,7 +102,9 @@ async function start() {
   const canvas = $<HTMLCanvasElement>('game');
   const isTouch = document.body.classList.contains('touch-device') || navigator.maxTouchPoints > 0;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isTouch });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2));
+  // Retina screens: 1.5x is sharp enough and draws ~45% fewer pixels than 2x.
+  let pixelRatio = Math.min(window.devicePixelRatio, 1.5);
+  renderer.setPixelRatio(pixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -99,7 +112,7 @@ async function start() {
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(palette.sky, 180, 700);
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 1500);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 760); // nothing beyond the fog is drawn
   // Soft studio reflections for the cars' paint and glass.
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -107,14 +120,18 @@ async function start() {
   scene.add(new THREE.HemisphereLight(0xdfefff, 0x9a9f80, 2.4));
   const sun = new THREE.DirectionalLight(0xfff2dd, 2.2);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(isTouch ? 1024 : 2048, isTouch ? 1024 : 2048);
+  // Weaker machines (phones, 2-4 core laptops) get a smaller shadow map.
+  const weak = isTouch || (navigator.hardwareConcurrency ?? 8) <= 4;
+  sun.shadow.mapSize.set(weak ? 1024 : 2048, weak ? 1024 : 2048);
+  // Shadows are redrawn every other frame (30 times a second is plenty for them).
+  renderer.shadowMap.autoUpdate = false;
   Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 300 });
   scene.add(sun, sun.target);
   const SUN_DIR = new THREE.Vector3(0.45, 0.75, 0.35).normalize();
 
   // Sky dome with the sun in the same direction as the shadow light.
   const sky = new Sky();
-  sky.scale.setScalar(1400);
+  sky.scale.setScalar(700); // follows the camera (see the frame loop), so it stays inside the far plane
   sky.renderOrder = -100; // draw first: the flat ground layers paint over it
   const u = sky.material.uniforms;
   u.turbidity.value = 4;
@@ -125,23 +142,36 @@ async function start() {
   scene.add(sky);
 
   const dyke = buildDyke(map); // first: opens the road tunnels under the railway
+  mark('dyke');
   applyStreetLooks(map);
+  mark('street looks');
   const scenery = placeScenery(map);
+  mark('scenery');
   const water = new WaterMap(map);
   const play = placePlaygrounds(map);
-  scene.add(buildPlaygrounds(play.items, play.areas));
-  scene.add(buildMapMeshes(map, scenery.grid, water, dyke), buildTrees(scenery.trees), buildLamps(scenery.lamps));
-  scene.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []), buildRamps(map.ramps ?? []));
+  // Everything that never moves, split into 200 m tiles so only what is in view gets drawn.
+  const statics = new THREE.Group();
+  statics.add(buildPlaygrounds(play.items, play.areas));
+  const decks = bridgeSegments(map, water, scenery.grid); // once: used for the meshes and the physics
+  statics.add(buildMapMeshes(map, scenery.grid, water, dyke, decks));
+  mark('map meshes');
+  statics.add(buildTrees(scenery.trees), buildLamps(scenery.lamps));
+  statics.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []), buildRamps(map.ramps ?? []));
+  mark('trees + greenery');
+  tileStatic(statics);
+  mark('tiles');
+  scene.add(statics);
 
   // --- Physics & world logic ---
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   world.timestep = 1 / 60;
   const events = new RAPIER.EventQueue(true);
-  const decks = bridgeSegments(map, water, scenery.grid);
   water.setBridges(decks);
+  mark('bridges');
   buildMapPhysics(world, map, scenery.trees, decks, dyke, play);
   addHedgePhysics(world, map.hedges ?? []);
   addRampPhysics(world, (map.ramps ?? []).map(rampPoints));
+  mark('physics');
   const graph = new RoadGraph(map);
 
   // --- Player car (rebuilt when changing car or upgrades in the garage) ---
@@ -340,6 +370,7 @@ async function start() {
   let streetTimer = 0;
   let firstFrame = true;
   let crashLoud = 0, lastCrashSound = 0;
+  let frameAvg = 16, lastResize = 0, frameNo = 0;
   const STOP: Parameters<Car['update']>[0] = { throttle: 0, steer: 0, handbrake: true };
 
   function frame(now: number) {
@@ -352,6 +383,8 @@ async function start() {
       acc += dt;
       const controls = input.read();
       throttleNow = controls.throttle;
+      // At most 3 physics steps per frame: on a slow frame, drop time instead of piling up work.
+      acc = Math.min(acc, world.timestep * 3);
       while (acc >= world.timestep) {
         if (car.sinking) car.updateSinking(world.timestep);
         else car.update(controls, world.timestep);
@@ -511,8 +544,23 @@ async function start() {
       arrowDistEl.textContent = `${Math.round(Math.hypot(vx, vz))} m`;
     }
 
+    sky.position.copy(camera.position);
+    frameNo++;
+    if (frameNo % 2 === 0 || firstFrame) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
+    // Dynamic resolution: if frames are slow for a while, draw fewer pixels (and more again when fast).
+    frameAvg = frameAvg * 0.95 + dt * 1000 * 0.05;
+    if (now - lastResize > 2000) {
+      const target = frameAvg > 30 ? Math.max(0.75, pixelRatio - 0.25) : frameAvg < 18 ? Math.min(Math.min(window.devicePixelRatio, 1.5), pixelRatio + 0.25) : pixelRatio;
+      if (target !== pixelRatio) {
+        pixelRatio = target;
+        renderer.setPixelRatio(pixelRatio);
+        lastResize = now;
+      }
+    }
     if (firstFrame) {
+      mark('first frame');
+      console.info('startup', marks.map(([n, t]) => `${n} ${t}ms`).join(' · '));
       loadingEl.classList.add('hidden');
       firstFrame = false;
     }
@@ -552,7 +600,7 @@ async function start() {
   }
 
   // Handy for debugging in the browser console.
-  (window as unknown as { game: unknown }).game = { people, car: () => car, world, map, scene, camera, police, runner, progress, traffic };
+  (window as unknown as { game: unknown }).game = { renderer, people, car: () => car, world, map, scene, camera, police, runner, progress, traffic };
 }
 
 start().catch((err) => {

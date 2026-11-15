@@ -263,9 +263,8 @@ export function bridgeSegments(map: MapData, water: WaterMap, grid: RoadGrid) {
   return segs;
 }
 
-function bridges(map: MapData, water: WaterMap, grid: RoadGrid): THREE.Group {
+function bridges(segs: ReturnType<typeof bridgeSegments>): THREE.Group {
   const g = new THREE.Group();
-  const segs = bridgeSegments(map, water, grid);
   // Extend each piece a little so neighbouring pieces overlap without gaps.
   // Road decks in road colour, drawn just above path decks (where a path deck touches a road).
   for (const drivable of [false, true]) {
@@ -328,7 +327,7 @@ function waterHole(map: MapData, water: WaterMap): THREE.Group {
 /** Kerbs along both edges of the streets, with gaps at junctions, crossings and water. */
 function kerbs(roads: Road[], grid: RoadGrid, water: WaterMap): THREE.Group {
   const faces: [number, number, number, number][] = [];
-  const tops: { pts: Pt[]; width: number }[] = [];
+  const tops: number[] = []; // kerb tops as plain triangles (thousands of tiny pieces: no per-piece geometry)
   for (const r of roads) {
     if (r.kind === 'service' || r.width < 4.5) continue;
     const hw = r.width / 2;
@@ -346,7 +345,8 @@ function kerbs(roads: Road[], grid: RoadGrid, water: WaterMap): THREE.Group {
           if (grid.edgeDistance(tx, tz) < 0 || water.contains(tx, tz)) continue; // another road or water there
           const p0: Pt = [ax + ux * d0 + nx * o, az + uz * d0 + nz * o], p1: Pt = [ax + ux * d1 + nx * o, az + uz * d1 + nz * o];
           faces.push([p0[0], p0[1], p1[0], p1[1]]);
-          tops.push({ pts: [[p0[0] + nx * side * 0.08, p0[1] + nz * side * 0.08], [p1[0] + nx * side * 0.08, p1[1] + nz * side * 0.08]], width: 0.16 });
+          const qx = nx * side * 0.16, qz = nz * side * 0.16, Y = 0.12;
+          tops.push(p0[0], Y, p0[1], p1[0], Y, p1[1], p1[0] + qx, Y, p1[1] + qz, p0[0], Y, p0[1], p1[0] + qx, Y, p1[1] + qz, p0[0] + qx, Y, p0[1] + qz);
         }
       }
     }
@@ -355,15 +355,16 @@ function kerbs(roads: Road[], grid: RoadGrid, water: WaterMap): THREE.Group {
   const mat = new THREE.MeshLambertMaterial({ color: palette.kerb, side: THREE.DoubleSide });
   const face = walls(faces, 0, 0.12);
   if (face) g.add(new THREE.Mesh(face, mat));
-  const top = ribbons(tops);
-  if (top) {
-    top.translate(0, 0.12, 0);
+  if (tops.length) {
+    const top = new THREE.BufferGeometry();
+    top.setAttribute('position', new THREE.Float32BufferAttribute(tops, 3));
+    top.computeVertexNormals();
     g.add(new THREE.Mesh(top, mat));
   }
   return g;
 }
 
-export function buildMapMeshes(map: MapData, grid: RoadGrid, water: WaterMap, dyke: Dyke): THREE.Group {
+export function buildMapMeshes(map: MapData, grid: RoadGrid, water: WaterMap, dyke: Dyke, decks?: ReturnType<typeof bridgeSegments>): THREE.Group {
   const group = new THREE.Group();
   const size = MAP_HALF_SIZE * 2 + 400;
   const ground = new THREE.PlaneGeometry(size, size).rotateX(-Math.PI / 2);
@@ -380,7 +381,7 @@ export function buildMapMeshes(map: MapData, grid: RoadGrid, water: WaterMap, dy
   add(flatMesh(ribbons(streets), palette.road, LAYER.road));
   add(flatMesh(laneMarkings(streets), palette.marking, LAYER.marking));
   add(waterHole(map, water));
-  add(bridges(map, water, grid));
+  add(bridges(decks ?? bridgeSegments(map, water, grid)));
   add(kerbs(streets, grid, water));
   add(buildBuildings(map.buildings, map.lod3d));
   for (const s of map.stations) add(stationMarker(s.name, s.p[0], s.p[1]));

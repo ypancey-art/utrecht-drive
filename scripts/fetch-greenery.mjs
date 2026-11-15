@@ -40,32 +40,41 @@ for (const w of osm.elements) {
     map.hedges.push({ pts, h });
   } else if (pts.length >= 4) map.shrubs.push({ pts, flowers: w.tags.landuse === 'flowerbed' || undefined });
 }
-// Leave a gap where a hedge crosses a road or path (driveways, entrances).
+// Leave a gap wherever a hedge comes onto a road or path (driveways, entrances): cut out every
+// part of a hedge that is closer to a road centre line than half the road width plus 1 m.
 const roadSegs = map.roads.filter((r) => !r.tunnel).flatMap((r) => r.pts.slice(1).map((b, i) => [r.pts[i], b, r.width / 2 + 1]));
-const crossAt = (a, b, c, d) => {
-  const rx = b[0] - a[0], rz = b[1] - a[1], sx = d[0] - c[0], sz = d[1] - c[1];
-  const den = rx * sz - rz * sx;
-  if (Math.abs(den) < 1e-9) return -1;
-  const t = ((c[0] - a[0]) * sz - (c[1] - a[1]) * sx) / den, u = ((c[0] - a[0]) * rz - (c[1] - a[1]) * rx) / den;
-  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? t : -1;
-};
+const near = (x, z) => roadSegs.some(([a, b, gap]) => {
+  if (Math.abs(x - a[0]) > 60 && Math.abs(x - b[0]) > 60) return false;
+  const dx = b[0] - a[0], dz = b[1] - a[1], l = dx * dx + dz * dz || 1;
+  const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l));
+  return Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t) < gap;
+});
 const cut = [];
 for (const h of map.hedges) {
-  let cur = [h.pts[0]];
+  let cur = [];
   for (let i = 0; i < h.pts.length - 1; i++) {
-    const a = h.pts[i], b = h.pts[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-    const hits = roadSegs.map(([c, d, gap]) => [crossAt(a, b, c, d), gap]).filter(([t]) => t >= 0).sort((x, y) => x[0] - y[0]);
-    for (const [t, gap] of hits) {
-      const g = gap / len;
-      const p0 = [a[0] + (b[0] - a[0]) * Math.max(0, t - g), a[1] + (b[1] - a[1]) * Math.max(0, t - g)];
-      const p1 = [a[0] + (b[0] - a[0]) * Math.min(1, t + g), a[1] + (b[1] - a[1]) * Math.min(1, t + g)];
-      cur.push(p0);
-      if (cur.length >= 2) cut.push({ pts: cur, h: h.h });
-      cur = [p1];
+    const a = h.pts[i], b = h.pts[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const n = Math.max(1, Math.ceil(len / 0.5));
+    for (let k = i === 0 ? 0 : 1; k <= n; k++) {
+      const p = [+(a[0] + ((b[0] - a[0]) * k) / n).toFixed(2), +(a[1] + ((b[1] - a[1]) * k) / n).toFixed(2)];
+      if (near(p[0], p[1])) {
+        if (cur.length >= 2) cut.push({ pts: cur, h: h.h });
+        cur = [];
+      } else cur.push(p);
     }
-    cur.push(b);
   }
   if (cur.length >= 2) cut.push({ pts: cur, h: h.h });
+}
+// Merge the 0.5 m steps back into straight runs.
+for (const c of cut) {
+  const out = [c.pts[0]];
+  for (let i = 1; i < c.pts.length - 1; i++) {
+    const a = out[out.length - 1], b = c.pts[i], d = c.pts[i + 1];
+    const cross = (b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]);
+    if (Math.abs(cross) > 0.05) out.push(b);
+  }
+  out.push(c.pts[c.pts.length - 1]);
+  c.pts = out;
 }
 map.hedges = cut.filter((h) => h.pts.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - h.pts[i][0], p[1] - h.pts[i][1]), 0) > 0.5);
 console.log(`${map.hedges.length} hedges, ${map.shrubs.length} shrub/flower beds`);

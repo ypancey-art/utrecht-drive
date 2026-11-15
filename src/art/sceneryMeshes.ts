@@ -26,7 +26,7 @@ export function buildTrees(trees: Tree[]): THREE.Group {
   // crowns are clusters of lobes (not one ball), darker underneath and lighter on top.
   const lobed = (lobes: number[][], seed: number) => {
     const parts = lobes.map(([x, y, z, r], k) => {
-      const g = new THREE.IcosahedronGeometry(r, 1).translate(x, y, z);
+      const g = new THREE.IcosahedronGeometry(r, 0).translate(x, y, z); // 20 faces per lobe keeps 3000+ trees cheap
       const p = g.getAttribute('position');
       for (let i = 0; i < p.count; i++) {
         const n = Math.sin(p.getX(i) * 31.7 + p.getY(i) * 57.3 + p.getZ(i) * 19.1 + seed * 3.1 + k) * 0.5 + 0.5;
@@ -182,7 +182,7 @@ export function buildGreenery(hedges: { pts: [number, number][]; h: number }[], 
       }
   }
   if (bushes.length) {
-    const geo = new THREE.IcosahedronGeometry(0.75, 1).scale(1, 0.75, 1).translate(0, 0.45, 0);
+    const geo = new THREE.IcosahedronGeometry(0.75, 0).scale(1, 0.75, 1).translate(0, 0.45, 0);
     const p = geo.getAttribute('position');
     for (let i = 0; i < p.count; i++) {
       const n = Math.sin(p.getX(i) * 17.1 + p.getZ(i) * 9.3) * 0.5 + 0.5;

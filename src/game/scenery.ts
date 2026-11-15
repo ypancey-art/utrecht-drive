@@ -40,7 +40,7 @@ function rng(seed: number) {
 
 /** Grid of road segments for fast "how far from the road edge" checks. */
 export class RoadGrid {
-  private cells = new Map<string, number[]>(); // flat [ax, az, bx, bz, halfWidth, ...]
+  private cells = new Map<number, number[]>(); // flat [ax, az, bx, bz, halfWidth, ...], numeric cell key
   private cell = 25;
   constructor(map: MapData) {
     const cell = this.cell;
@@ -53,7 +53,7 @@ export class RoadGrid {
         const z0 = Math.floor((Math.min(az, bz) - hw) / cell), z1 = Math.floor((Math.max(az, bz) + hw) / cell);
         for (let x = x0; x <= x1; x++)
           for (let z = z0; z <= z1; z++) {
-            const k = `${x},${z}`;
+            const k = x * 4096 + z;
             let list = this.cells.get(k);
             if (!list) this.cells.set(k, (list = []));
             list.push(ax, az, bx, bz, hw);
@@ -63,7 +63,7 @@ export class RoadGrid {
   }
   /** Distance from (x, z) to the nearest road edge (negative = on the road). Capped at one cell. */
   edgeDistance(x: number, z: number) {
-    const list = this.cells.get(`${Math.floor(x / this.cell)},${Math.floor(z / this.cell)}`);
+    const list = this.cells.get(Math.floor(x / this.cell) * 4096 + Math.floor(z / this.cell));
     let best = this.cell;
     if (!list) return best;
     for (let i = 0; i < list.length; i += 5) {

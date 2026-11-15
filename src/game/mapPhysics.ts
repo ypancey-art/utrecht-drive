@@ -19,14 +19,38 @@ export function buildMapPhysics(
   const S = MAP_HALF_SIZE + 200;
   world.createCollider(RAPIER.ColliderDesc.cuboid(S, 0.5, S).setTranslation(0, -0.5, 0).setFriction(1), fixed);
 
+  // Streets that pass under a building (OSM passages): the wall gets an opening there.
+  const PASSAGE = 3.8;
+  const streetCells = new Map<number, number[][]>();
+  for (const r of map.roads) {
+    if (!r.drivable || r.tunnel) continue;
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const s = [r.pts[i][0], r.pts[i][1], r.pts[i + 1][0], r.pts[i + 1][1]];
+      for (let cx = Math.floor(Math.min(s[0], s[2]) / 25); cx <= Math.floor(Math.max(s[0], s[2]) / 25); cx++)
+        for (let cz = Math.floor(Math.min(s[1], s[3]) / 25); cz <= Math.floor(Math.max(s[1], s[3]) / 25); cz++) {
+          const k = cx * 4096 + cz;
+          (streetCells.get(k) ?? streetCells.set(k, []).get(k)!).push(s);
+        }
+    }
+  }
+  const crossesStreet = (ax: number, az: number, bx: number, bz: number) => {
+    for (const s of streetCells.get(Math.floor((ax + bx) / 2 / 25) * 4096 + Math.floor((az + bz) / 2 / 25)) ?? []) {
+      const rx = bx - ax, rz = bz - az, sx = s[2] - s[0], sz = s[3] - s[1], den = rx * sz - rz * sx;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((s[0] - ax) * sz - (s[1] - az) * sx) / den, u = ((s[0] - ax) * rz - (s[1] - az) * rx) / den;
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return true;
+    }
+    return false;
+  };
   const verts: number[] = [];
   const idx: number[] = [];
   for (const { pts, h } of map.buildings) {
     for (let i = 0; i < pts.length - 1; i++) {
       const [ax, az] = pts[i];
       const [bx, bz] = pts[i + 1];
+      const y0 = h > PASSAGE + 1 && crossesStreet(ax, az, bx, bz) ? PASSAGE : 0;
       const base = verts.length / 3;
-      verts.push(ax, 0, az, bx, 0, bz, bx, h, bz, ax, h, az);
+      verts.push(ax, y0, az, bx, y0, bz, bx, h, bz, ax, h, az);
       idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
   }

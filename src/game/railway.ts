@@ -167,23 +167,35 @@ export function buildDyke(map: MapData): Dyke {
       }
   }
   // Morphological closing (max filter, then min filter) fills the dip between parallel tracks.
-  const filter = (src: Float32Array, pick: (a: number, b: number) => number) => {
+  // Separable max / min filters, written as plain loops (this runs on every start).
+  const filter = (src: Float32Array, isMax: boolean) => {
     const tmp = new Float32Array(src.length), out = new Float32Array(src.length);
-    for (let j = 0; j < nz; j++)
+    for (let j = 0; j < nz; j++) {
+      const row = j * nx;
       for (let i = 0; i < nx; i++) {
-        let v = src[j * nx + i];
-        for (let k = Math.max(0, i - CLOSE); k <= Math.min(nx - 1, i + CLOSE); k++) v = pick(v, src[j * nx + k]);
-        tmp[j * nx + i] = v;
+        let v = src[row + i];
+        const k1 = Math.min(nx - 1, i + CLOSE);
+        for (let k = Math.max(0, i - CLOSE); k <= k1; k++) {
+          const w = src[row + k];
+          if (isMax ? w > v : w < v) v = w;
+        }
+        tmp[row + i] = v;
       }
-    for (let j = 0; j < nz; j++)
+    }
+    for (let j = 0; j < nz; j++) {
+      const k0 = Math.max(0, j - CLOSE), k1 = Math.min(nz - 1, j + CLOSE);
       for (let i = 0; i < nx; i++) {
         let v = tmp[j * nx + i];
-        for (let k = Math.max(0, j - CLOSE); k <= Math.min(nz - 1, j + CLOSE); k++) v = pick(v, tmp[k * nx + i]);
+        for (let k = k0; k <= k1; k++) {
+          const w = tmp[k * nx + i];
+          if (isMax ? w > v : w < v) v = w;
+        }
         out[j * nx + i] = v;
       }
+    }
     return out;
   };
-  const closed = filter(filter(H, Math.max), Math.min);
+  const closed = filter(filter(H, true), false);
   for (let k = 0; k < H.length; k++) H[k] = Math.max(H[k], closed[k]);
 
   // ---- openings: grid points inside one are cut; those next to the edge are moved onto it.
@@ -275,12 +287,16 @@ export function buildDyke(map: MapData): Dyke {
   // Decks: every stretch of track over an opening.
   for (const s of raised) {
     const len = Math.hypot(s[2] - s[0], s[3] - s[1]);
+    const sx0 = Math.min(s[0], s[2]), sx1 = Math.max(s[0], s[2]), sz0 = Math.min(s[1], s[3]), sz1 = Math.max(s[1], s[3]);
+    const nearOpenings = openings.filter(({ seg, hw }) =>
+      Math.max(seg[0], seg[2]) + hw + 1 >= sx0 && Math.min(seg[0], seg[2]) - hw - 1 <= sx1 && Math.max(seg[1], seg[3]) + hw + 1 >= sz0 && Math.min(seg[1], seg[3]) - hw - 1 <= sz1);
+    if (!nearOpenings.length) continue;
     let start = -1;
     const STEP = 0.5;
     for (let d = 0; d <= len + STEP; d += STEP) {
       const t = Math.min(d, len) / len;
       const x = s[0] + (s[2] - s[0]) * t, z = s[1] + (s[3] - s[1]) * t;
-      const over = d <= len && openings.some(({ seg, hw }) => segDist(x, z, seg) < hw + 0.5);
+      const over = d <= len && nearOpenings.some(({ seg, hw }) => segDist(x, z, seg) < hw + 0.5);
       if (over && start < 0) start = d;
       if ((!over || d > len) && start >= 0) {
         const e = Math.min(len, d);
