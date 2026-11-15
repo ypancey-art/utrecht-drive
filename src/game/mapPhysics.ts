@@ -102,3 +102,19 @@ export function buildMapPhysics(
     world.createCollider(RAPIER.ColliderDesc.cuboid(hx, 10, hz).setTranslation(x, 10, z), fixed);
   }
 }
+
+/** Hedges stop cars like a low wall (shrub beds do not: you can drive through bushes). */
+export function addHedgePhysics(world: RAPIER.World, hedges: { pts: [number, number][]; h: number }[]) {
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  for (const { pts, h } of hedges)
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      if (len < 0.2) continue;
+      const yaw = Math.atan2(-(bz - az), bx - ax);
+      world.createCollider(
+        RAPIER.ColliderDesc.cuboid(len / 2 + 0.2, h / 2, 0.4).setTranslation((ax + bx) / 2, h / 2, (az + bz) / 2).setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }).setFriction(0.6),
+        body,
+      );
+    }
+}

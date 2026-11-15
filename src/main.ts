@@ -3,7 +3,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadMap, nearestRoad } from './game/mapData';
-import { buildMapPhysics } from './game/mapPhysics';
+import { buildMapPhysics, addHedgePhysics } from './game/mapPhysics';
 import { Car } from './game/car';
 import { Input } from './game/input';
 import { placeScenery } from './game/scenery';
@@ -14,6 +14,7 @@ import { buildPlaygrounds } from './art/playgroundMeshes';
 import { RoadGraph } from './game/roadGraph';
 import { Police, STAR_LEVELS } from './game/police';
 import { sound } from './audio/sound';
+import { applyStreetLooks } from './game/streetLooks';
 import { People } from './game/people';
 import { makePersonVisual } from './art/peopleMeshes';
 import { Traffic } from './game/traffic';
@@ -21,7 +22,7 @@ import { buildMissions, MissionRunner, MISSION_SIZE, REACH_RADIUS } from './game
 import { CARS, POLICE, carById, upgradedStats, armourFactor } from './game/cars';
 import { loadProgress, saveProgress, upgradesFor } from './game/progress';
 import { buildMapMeshes, bridgeSegments } from './art/mapMeshes';
-import { buildTrees, buildLamps } from './art/sceneryMeshes';
+import { buildTrees, buildLamps, buildGreenery } from './art/sceneryMeshes';
 import { buildCarModel, loadCarAssets, type CarModel } from './art/carModels';
 import { beam } from './art/markers';
 import { palette } from './art/palette';
@@ -123,11 +124,13 @@ async function start() {
   scene.add(sky);
 
   const dyke = buildDyke(map); // first: opens the road tunnels under the railway
+  applyStreetLooks(map);
   const scenery = placeScenery(map);
   const water = new WaterMap(map);
   const play = placePlaygrounds(map);
   scene.add(buildPlaygrounds(play.items, play.areas));
   scene.add(buildMapMeshes(map, scenery.grid, water, dyke), buildTrees(scenery.trees), buildLamps(scenery.lamps));
+  scene.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []));
 
   // --- Physics & world logic ---
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
@@ -136,6 +139,7 @@ async function start() {
   const decks = bridgeSegments(map, water, scenery.grid);
   water.setBridges(decks);
   buildMapPhysics(world, map, scenery.trees, decks, dyke, play);
+  addHedgePhysics(world, map.hedges ?? []);
   const graph = new RoadGraph(map);
 
   // --- Player car (rebuilt when changing car or upgrades in the garage) ---

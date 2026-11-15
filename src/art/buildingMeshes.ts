@@ -10,6 +10,7 @@ interface Style {
   walls: number[]; // wall tints (multiply the white parts of the texture)
   roofs: number[]; // pitched roof colours
   draw: (g: CanvasRenderingContext2D) => void; // one bay x one floor, 128 x 128, top = top of floor
+  plain?: string; // colour of plain wall parts (sheds, gables) when it is baked into the texture
 }
 
 const glass = (g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, frame = '#f4f4f0') => {
@@ -133,6 +134,77 @@ const STYLES: Record<string, Style> = {
       g.moveTo(46, 116); g.lineTo(46, 50); g.arc(64, 50, 18, Math.PI, 0); g.lineTo(82, 116); g.closePath(); g.fill();
     },
   },
+  // Styles matched to Street View, per street (see src/game/streetLooks.ts).
+  row62: {
+    // 1960s terraced houses: brick, white band under the roof edge, coloured panel under the window.
+    plain: '#8c5647',
+    bay: 5.2, floor: 2.85,
+    walls: [0xffffff],
+    roofs: [0x5d6066],
+    draw: (g) => {
+      g.fillStyle = '#8c5647';
+      g.fillRect(0, 0, 128, 128);
+      bricks(g);
+      glass(g, 14, 30, 64, 46, '#f4f4f0');
+      g.fillStyle = '#e6cf72';
+      g.fillRect(10, 80, 72, 30); // panel under the window
+      g.fillStyle = '#f4f4f0';
+      g.fillRect(0, 0, 128, 8); // band
+      g.fillRect(92, 24, 26, 104); // door frame
+      g.fillStyle = '#e6cf72';
+      g.fillRect(96, 30, 18, 98);
+    },
+  },
+  row02: {
+    // 2000s houses: orange-brown brick, white frames, grey panels.
+    plain: '#9c5b3b',
+    bay: 5.0, floor: 2.8,
+    walls: [0xffffff],
+    roofs: [0x3f3f44],
+    draw: (g) => {
+      g.fillStyle = '#9c5b3b';
+      g.fillRect(0, 0, 128, 128);
+      bricks(g);
+      glass(g, 16, 26, 48, 40, '#f4f4f0');
+      g.fillStyle = '#6f7378';
+      g.fillRect(16, 74, 48, 22);
+      g.fillStyle = '#f4f4f0';
+      g.fillRect(12, 70, 56, 4);
+      glass(g, 90, 22, 26, 40, '#f4f4f0');
+      g.fillStyle = '#c98a3a';
+      g.fillRect(90, 68, 26, 60); // door
+    },
+  },
+  timber: {
+    // 1980s houses clad in dark horizontal boards, white window frames.
+    plain: '#3f444b',
+    bay: 3.4, floor: 2.8,
+    walls: [0xffffff],
+    roofs: [0x2f3033],
+    draw: (g) => {
+      g.fillStyle = '#3f444b';
+      g.fillRect(0, 0, 128, 128);
+      g.fillStyle = 'rgba(255,255,255,0.12)';
+      for (let y = 0; y < 128; y += 10) g.fillRect(0, y, 128, 2);
+      glass(g, 24, 26, 80, 60, '#f4f4f0');
+    },
+  },
+  woodSlat: {
+    // Modern flats with wooden slat cladding and concrete floor edges.
+    plain: '#8b6a4f',
+    bay: 3.6, floor: 3.0,
+    walls: [0xffffff],
+    roofs: [0x3a3b3e],
+    draw: (g) => {
+      g.fillStyle = '#8b6a4f';
+      g.fillRect(0, 0, 128, 128);
+      g.fillStyle = 'rgba(0,0,0,0.18)';
+      for (let y = 4; y < 100; y += 7) g.fillRect(0, y, 128, 2);
+      glass(g, 8, 18, 112, 62, '#3a3b3e');
+      g.fillStyle = '#d6d3cc';
+      g.fillRect(0, 104, 128, 24); // concrete floor edge
+    },
+  },
   modern: {
     bay: 3.4, floor: 3.0,
     walls: [0xd9d4cc, 0xb8b2a8, 0x6d6f73, 0xc7b9a3],
@@ -167,6 +239,7 @@ function flatFromPhoto(b: Building): 'flat' | 'flatBlue' | 'flatWarm' | null {
 
 function styleFor(b: Building): keyof typeof STYLES {
   if (b.church) return b.church;
+  if (b.look && b.look in STYLES) return b.look;
   const named = styleByYear(b);
   if (named.startsWith('flat')) return flatFromPhoto(b) ?? named;
   return named;
@@ -190,7 +263,7 @@ function texture(style: Style) {
   g.fillStyle = '#ffffff';
   g.fillRect(0, 0, 128, 128);
   style.draw(g);
-  g.fillStyle = '#ffffff';
+  g.fillStyle = style.plain ?? '#ffffff';
   g.fillRect(0, 0, 4, 4); // guaranteed plain-wall pixel for sheds/gables (uv 0.01, 0.99)
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -270,7 +343,8 @@ export function buildBuildings(list: Building[], lod3d?: { pos: Int16Array; idx:
     const pitched = !!(b.eave && b.ridge);
     const wallH = pitched ? b.eave! : b.h;
     wc.setHex(style.walls[idx % style.walls.length]);
-    if (b.facade && !styleName.startsWith('flat') && styleName !== 'panel') {
+    if (b.lookWall !== undefined) wc.setHex(b.lookWall);
+    else if (b.facade && !styleName.startsWith('flat') && styleName !== 'panel' && !b.look) {
       // Real wall colour from a street photo. Photos are often in shade: lift the brightness.
       const { h, s, l } = hslOf(b.facade[0]);
       wc.setHSL(h, Math.min(0.55, s * 1.15), Math.max(0.25, Math.min(0.88, l * 1.3 + 0.06)));

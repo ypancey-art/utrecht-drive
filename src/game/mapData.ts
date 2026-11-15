@@ -14,6 +14,8 @@ export interface Building {
   roofColor?: number; // measured from the aerial photo
   facade?: [number, number, number]; // wall colour, accent colour, accent share (Mapillary street photos)
   church?: 'church' | 'mosque';
+  look?: string; // façade style chosen from Street View for this street (streetLooks.ts)
+  lookWall?: number; // and its wall colour
   lod?: [number, number, number, number, number]; // 3D shape: vertex start, count, index start, wall indices, roof indices
   pts: Pt[];
 }
@@ -26,6 +28,8 @@ export interface MapData {
   waterways: { width: number; pts: Pt[] }[];
   rails: { pts: Pt[]; bridge?: boolean }[];
   playgrounds: { name: string; water?: boolean; pts: Pt[] }[];
+  hedges?: { pts: Pt[]; h: number }[]; // OSM barrier=hedge
+  shrubs?: { pts: Pt[]; flowers?: boolean }[]; // OSM shrubbery / flower beds
   green: { pts: Pt[] }[];
   woods: { pts: Pt[] }[];
   trees: Pt[];

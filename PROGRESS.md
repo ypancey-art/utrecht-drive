@@ -92,3 +92,6 @@ Known gaps / next steps:
 - [x] Pedestrians + cyclists on real paths (game/people.ts, art/peopleMeshes.ts); test: `?people`
 - [ ] Mobile controls (deferred by user)
 - [ ] Cycle tunnels under the dreven (not under the railway) still hidden
+- [x] Street View looks per street (src/game/streetLooks.ts + styles row62/row02/timber/woodSlat). Done: Anna van Burendreef. Look by hand in Chrome, add a rule per building group (street + years).
+- [x] Hedges + shrub/flower beds from OSM (scripts/fetch-greenery.mjs, run last); hedges are solid. Trees: lobed crowns, darker greens.
+- Note: headless screenshots fail while the user's Chrome runs; use the Claude-in-Chrome tab on localhost:5173 instead.
