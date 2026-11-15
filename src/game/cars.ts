@@ -6,7 +6,7 @@ export interface CarDims { length: number; width: number; height: number; wheelR
 export interface CarSpec {
   id: string;
   name: string; // shown in the game
-  model: string; // file in public/models/cars (Kenney Car Kit, CC0)
+  model: string; // body in public/models/cars/car-pack.glb: "<node>|<length m>|<flip front/back 0/1>"
   price: number; // coins (0 = starter)
   colors: number[]; // paint choices; the first is the model's own colour
   stats: CarStats; // base stats, upgrades add to these
@@ -35,19 +35,19 @@ export const CARS: CarSpec[] = [
     armour: 0.95,
   },
   {
-    id: 'wagon', name: 'Stationwagon', model: 'Wagon Body|4.8|0', price: 220,
+    id: 'wagon', name: 'Stationwagon', model: 'Wagon Body|4.8|1', price: 220,
     colors: [0, 0x3d5a3e, 0xd9dcde, 0x1b1c1f, 0x3b5f9c],
     stats: { mass: 1700, engineForce: 5600, brakeForce: 115, maxSpeed: 35, maxSteer: 0.54, grip: 3.2 },
     armour: 0.85,
   },
   {
-    id: 'suv', name: 'SUV', model: 'SUV Body|4.7|0', price: 260,
+    id: 'suv', name: 'SUV', model: 'SUV Body|4.7|1', price: 260,
     colors: [0, 0xf2f2f2, 0x1b1c1f, 0x3b5f9c, 0x8a1c22],
     stats: { mass: 2000, engineForce: 6600, brakeForce: 121, maxSpeed: 35, maxSteer: 0.52, grip: 3.1 },
     armour: 0.7,
   },
   {
-    id: 'offroad', name: 'Offroad', model: 'Offroad Body|4.6|0', price: 340,
+    id: 'offroad', name: 'Offroad', model: 'Offroad Body|4.6|1', price: 340,
     colors: [0, 0x5b6b3a, 0xc8a46a, 0x1b1c1f, 0xe0662b],
     stats: { mass: 2100, engineForce: 7400, brakeForce: 125, maxSpeed: 36, maxSteer: 0.52, grip: 3.5 },
     armour: 0.55,
@@ -71,7 +71,7 @@ export const CARS: CarSpec[] = [
     armour: 1.2,
   },
   {
-    id: 'sport', name: 'Sportwagen', model: 'Sport body|4.5|0', price: 600,
+    id: 'sport', name: 'Sportwagen', model: 'Sport body|4.5|1', price: 600,
     colors: [0, 0xf2f2f2, 0x35d07f, 0xff7a1a, 0x7a4dff],
     stats: { mass: 1450, engineForce: 8700, brakeForce: 150, maxSpeed: 46, maxSteer: 0.5, grip: 3.9 },
     armour: 1.45,
@@ -80,7 +80,7 @@ export const CARS: CarSpec[] = [
 
 /** The police car (not for sale). */
 export const POLICE: CarSpec = {
-  id: 'police', name: 'Politie', model: 'Wagon Body|4.8|0', price: 0, colors: [0xf4f4f2],
+  id: 'police', name: 'Politie', model: 'Wagon Body|4.8|1', price: 0, colors: [0xf4f4f2],
   stats: { mass: 1800, engineForce: 8200, brakeForce: 130, maxSpeed: 40, maxSteer: 0.55, grip: 3.3 },
   armour: 1,
 };
