@@ -13,7 +13,7 @@ import { CARS } from '../src/game/cars';
 const DATA = 'public/data/overvecht.json';
 const map: MapData = JSON.parse(readFileSync(DATA, 'utf8'));
 
-const YT = 6.5; // cruising height of the track surface (m)
+let YT = 6.5; // cruising height of the track surface (m); tried at 6.5 and 5.6
 const CEIL = 4.6; // headroom needed inside a building
 const GRADE = 0.13; // steepest climb (13 %)
 const W = 6; // track width
@@ -119,12 +119,13 @@ function maxCurvature(pts: P2[]) {
 /**
  * Heights along a path that starts (rising) or ends (falling) on the ground, with a flat part
  * at YT. Returns null if the path can't be built (something in the way that it can neither
- * pass over nor drive through). `flatFrom`/`flatTo` (indices) must stay at exactly YT.
+ * pass over nor drive through). The `flats` index ranges must stay at exactly YT.
  */
-function profile(pts: P2[], rising: boolean, flatFrom: number, flatTo: number) {
+function profile(pts: P2[], rising: boolean, flats: [number, number][]) {
   const n = pts.length, step = 3;
+  const isFlat = (i: number) => flats.some(([a, b]) => i >= a && i <= b);
   const sGround = (i: number) => (rising ? i : n - 1 - i) * step; // distance from the ground end
-  let y = pts.map((_, i) => (i >= flatFrom && i <= flatTo ? YT : Math.min(YT, GRADE * sGround(i))));
+  let y = pts.map((_, i) => (isFlat(i) ? YT : Math.min(YT, GRADE * sGround(i))));
   const through = new Map<number, number>();
   for (let iter = 0; iter < 4; iter++) {
     const req = new Array(n).fill(0);
@@ -154,10 +155,10 @@ function profile(pts: P2[], rising: boolean, flatFrom: number, flatTo: number) {
     for (let i = 0; i < n; i++) {
       let need = req[i];
       for (let j = Math.max(0, i - 40); j < Math.min(n, i + 40); j++) need = Math.max(need, req[j] - GRADE * step * Math.abs(i - j));
-      ny[i] = Math.max(i >= flatFrom && i <= flatTo ? YT : Math.min(YT, GRADE * sGround(i)), need);
+      ny[i] = Math.max(isFlat(i) ? YT : Math.min(YT, GRADE * sGround(i)), need);
     }
     for (let i = 0; i < n; i++) {
-      if (i >= flatFrom && i <= flatTo && Math.abs(ny[i] - YT) > 0.01) return (no('p:flatRaised'), null); // must stay level here
+      if (isFlat(i) && Math.abs(ny[i] - YT) > 0.01) return (no('p:flatRaised'), null); // must stay level here
       if (ny[i] > GRADE * sGround(i) + 0.01) return (no('p:groundEnd'), null); // too close to the ground end to climb that high
       if (ny[i] > 15) return (no('p:tooHigh'), null);
     }
@@ -167,7 +168,7 @@ function profile(pts: P2[], rising: boolean, flatFrom: number, flatTo: number) {
   // Round off crests and dips (a fast car would take off where the climb levels out), but keep
   // the level parts level, the ground end on the ground and every clearance.
   // Fixed: the level part (except where it meets the climb, which gets rounded) and the ground end.
-  const fixedAt = (i: number) => (i >= flatFrom && i <= flatTo && (rising ? i >= flatFrom + 4 : i <= flatTo - 4)) || i === (rising ? 0 : n - 1);
+  const fixedAt = (i: number) => flats.some(([a, b]) => i >= a && i <= b && (a === 0 || i >= a + 4) && (b === n - 1 || i <= b - 4)) || i === (rising ? 0 : n - 1);
   const raw = y.slice();
   for (let pass = 0; pass < 3; pass++) {
     const sm = y.slice();
@@ -194,9 +195,37 @@ interface Cand { track: Track; score: number; centre: P2 }
 const cands: Cand[] = [];
 const why: Record<string, number> = {};
 const no = (r: string) => { why[r] = (why[r] ?? 0) + 1; };
-const tall = map.buildings.map((b, i) => i).filter((i) => !map.buildings[i].church && ceilingOf(i) >= YT + CEIL + 0.5);
+const tall = map.buildings.map((b, i) => i).filter((i) => !map.buildings[i].church && ceilingOf(i) >= 5.6 + CEIL + 0.5);
+/** Straight lines through a building's centre that a track could drive along (in 16 directions). */
+interface Chord { bi: number; a: number; dx: number; dz: number; pin: P2; pout: P2 }
+function chordsOf(bi: number): Chord[] {
+  const b = map.buildings[bi];
+  let cx = 0, cz = 0;
+  const ring = b.pts.slice(0, -1);
+  for (const [x, z] of ring) (cx += x), (cz += z);
+  (cx /= ring.length), (cz /= ring.length);
+  if (bAt(cx, cz) !== bi) return [];
+  const out: Chord[] = [];
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
+    let back = 0, fwd = 0;
+    while (back < 60 && bAt(cx - dx * back, cz - dz * back) === bi) back += 0.5;
+    while (fwd < 60 && bAt(cx + dx * fwd, cz + dz * fwd) === bi) fwd += 0.5;
+    const len = back + fwd;
+    if (len < 8 || len > 40) continue;
+    let ok = true;
+    for (let t = -back + 1; t < fwd - 1 && ok; t += 2)
+      for (const s of [-W / 2, W / 2]) if (bAt(cx + dx * t - dz * s, cz + dz * t + dx * s) !== bi) ok = false;
+    if (ok) out.push({ bi, a, dx, dz, pin: [cx - dx * (back + 0.5), cz - dz * (back + 0.5)], pout: [cx + dx * (fwd + 0.5), cz + dz * (fwd + 0.5)] });
+  }
+  return out;
+}
+const allChords = tall.flatMap(chordsOf);
 console.log(`${tall.length} buildings tall enough to drive through`);
+for (const yt of [6.5, 5.6])
 for (const bi of tall) {
+  YT = yt;
+  if (ceilingOf(bi) < YT + CEIL + 0.5) continue;
   const b = map.buildings[bi];
   let cx = 0, cz = 0;
   const ring = b.pts.slice(0, -1);
@@ -245,17 +274,64 @@ for (const bi of tall) {
           if (maxCurvature(p) > 0.035) { no('curve1'); continue; }
           const flatFrom = p.findIndex(([x, z]) => Math.hypot(x - A[0], z - A[1]) < 2);
           if (flatFrom < 0) continue;
-          const pr = profile(p, true, flatFrom, p.length - 1);
+          const pr = profile(p, true, [[flatFrom, p.length - 1]]);
           if (!pr) { no('profile1'); continue; }
           if (!pr.through.includes(bi)) { no('notThrough'); continue; }
           part1 = { p, ...pr };
           break search1;
         }
     if (!part1) continue;
-    // Part 2: from the loop, level for a bit, then curving back down to the ground.
+    // Part 2: from the loop, level for a bit, then (if one fits) on through a second tall
+    // building, and curving back down to the ground.
     const F: P2 = [ex.x + dx * 20, ex.z + dz * 20];
     let part2: { p: P2[]; y: number[]; through: number[] } | null = null;
-    search2: for (const t2 of bends)
+    const next = allChords
+      .filter((c) => c.bi !== bi && c.dx * dx + c.dz * dz > 0.35)
+      .map((c) => ({ c, dist: Math.hypot(c.pin[0] - F[0], c.pin[1] - F[1]) }))
+      .filter(({ c, dist }) => dist > 50 && dist < 260 && ((c.pin[0] - F[0]) * dx + (c.pin[1] - F[1]) * dz) / dist > 0.4)
+      .sort((p, q) => p.dist - q.dist)
+      .slice(0, 14);
+    search2b: for (const { c } of next)
+      for (const t2 of bends)
+        for (const ge of [35, 55, 80]) {
+          const A2: P2 = [c.pin[0] - c.dx * 26, c.pin[1] - c.dz * 26];
+          const P3: P2 = [c.pout[0] + c.dx * 15, c.pout[1] + c.dz * 15];
+          const d3 = rot(c.dx, c.dz, t2), d4 = rot(c.dx, c.dz, t2 * 1.7);
+          const G: P2 = [P3[0] + d3[0] * 35, P3[1] + d3[1] * 35];
+          const E: P2 = [G[0] + d4[0] * ge, G[1] + d4[1] * ge];
+          if (at(water, E[0], E[1]) || at(street, E[0], E[1])) continue;
+          const p = spline([[ex.x, ex.z], F, A2, c.pin, c.pout, P3, G, E]);
+          if (maxCurvature(p) > 0.045) { no('curveChain'); continue; }
+          const near = (q: P2) => p.findIndex(([x, z]) => Math.hypot(x - q[0], z - q[1]) < 2);
+          const iF = near(F), iA = near(A2), iP = near(P3);
+          if (iF < 0 || iA < 0 || iP < 0 || iA < iF) continue;
+          const pr = profile(p, false, [[0, iF], [iA, iP]]);
+          if (!pr) { no('profileChain'); continue; }
+          if (!pr.through.includes(c.bi)) { no('chainNotThrough'); continue; }
+          part2 = { p, ...pr };
+          break search2b;
+        }
+    // Otherwise: stay up in the air for a long ride over the neighbourhood (the longest that
+    // fits), then come down.
+    if (!part2) {
+      for (const t2 of bends)
+        for (const turn of [0.35, -0.35, 0.6, -0.6]) {
+          const d3 = rot(dx, dz, t2), d4 = rot(d3[0], d3[1], turn), d5 = rot(d4[0], d4[1], turn);
+          const G1: P2 = [F[0] + d3[0] * 45, F[1] + d3[1] * 45];
+          const G2: P2 = [G1[0] + d4[0] * 55, G1[1] + d4[1] * 55];
+          const G3: P2 = [G2[0] + d5[0] * 45, G2[1] + d5[1] * 45];
+          const E: P2 = [G3[0] + d5[0] * 50, G3[1] + d5[1] * 50];
+          if (at(water, E[0], E[1]) || at(street, E[0], E[1])) continue;
+          const p = spline([[ex.x, ex.z], F, G1, G2, G3, E]);
+          if (maxCurvature(p) > 0.035) { no('curveLong'); continue; }
+          const iG = p.findIndex(([x, z]) => Math.hypot(x - G2[0], z - G2[1]) < 2);
+          if (iG < 0) continue;
+          const pr = profile(p, false, [[0, iG]]);
+          if (!pr) { no('profileLong'); continue; }
+          if (!part2 || p.length > part2.p.length) part2 = { p, ...pr };
+        }
+    }
+    if (!part2) search2: for (const t2 of bends)
       for (const fg of [30, 50])
         for (const ge of [35, 55, 80]) {
           const d3 = rot(dx, dz, t2), d4 = rot(dx, dz, t2 * 1.7);
@@ -266,7 +342,7 @@ for (const bi of tall) {
           if (maxCurvature(p) > 0.035) { no('curve2'); continue; }
           const flatTo = p.findIndex(([x, z]) => Math.hypot(x - F[0], z - F[1]) < 2);
           if (flatTo < 0) continue;
-          const pr = profile(p, false, 0, flatTo);
+          const pr = profile(p, false, [[0, flatTo]]);
           if (!pr) { no('profile2'); continue; }
           part2 = { p, ...pr };
           break search2;
@@ -286,7 +362,7 @@ for (const bi of tall) {
       })();
       cands.push({
         track: { id: '', name, parts: [{ kind: 'path', pts: pts1 }, { kind: 'loop', loop }, { kind: 'path', pts: pts2 }], through: thr.map((j) => ({ b: j, y: YT })) },
-        score: thr.length * 10 + over.size * 3 + Math.random(),
+        score: thr.length * 10 + over.size * 3 + ((pts1.length + pts2.length) * 3) / 15 + Math.random(),
         centre: [cx, cz],
       });
     }
@@ -321,7 +397,7 @@ async function testDrive(t: Track, carId: string) {
     const tgt = all[Math.min(all.length - 1, best + 3)];
     const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
     const ang = Math.atan2(fx * (tgt[2] - p.z) - fz * (tgt[0] - p.x), fx * (tgt[0] - p.x) + fz * (tgt[2] - p.z));
-    const inLoop = Math.hypot(p.x - loop.x, p.z - loop.z) < 20 && p.y > YT - 1;
+    const inLoop = Math.hypot(p.x - loop.x, p.z - loop.z) < 20 && p.y > (loop.y ?? 0) - 1;
     car.update({ throttle: 1, steer: inLoop || upY < 0.7 ? 0 : Math.max(-1, Math.min(1, ang * 2)), handbrake: false }, world.timestep);
     world.step();
     if (inLoop) maxLoopY = Math.max(maxLoopY, p.y);
@@ -330,7 +406,7 @@ async function testDrive(t: Track, carId: string) {
     const e = end[end.length - 1];
     if (Math.hypot(p.x - e[0], p.z - e[2]) < 8 && p.y < 2.5) { reached = true; break; }
   }
-  const ok = reached && !fell && maxLoopY > YT + 2 * LR - 1.5 && !car.flipped;
+  const ok = reached && !fell && maxLoopY > (loop.y ?? 0) + 2 * LR - 1.5 && !car.flipped;
   car.dispose();
   return { ok, reached, fell, maxLoopY };
 }
