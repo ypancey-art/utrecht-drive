@@ -105,3 +105,8 @@ Known gaps / next steps:
 - [x] Tests: `npm test` (node:test + tsx, tests/*.test.ts): maths, streets not blocked, water index, ramps (2 cars),
   traffic on road, people, police escalation, missions reachable, data sanity. Runs in CI before every deploy.
   Found+fixed: hedges on service roads, streets under buildings (wall opening 3.8 m), "same kind" problem retry.
+
+## 2026-11-15
+- Cyclists/walkers follow the path line exactly (`people.ts`, no steering → no orbiting waypoints). Bike graph prefers cycleways (RoadGraph edge weights: cycleway 1, streets 5) and spawns/goals only on cycleway nodes. Test: `cyclists ride along cycle paths and do not circle`.
+- Toasts: small fading banner at the top; dropped pop-ups for extra police cars, hitting a person, mission start, checkpoints (a coin sound instead).
+- Menu "🧮 Sommen voor munten": endless sums, 4 + grade index coins per right answer, 5× bonus every 5 in a row (`mathGate(..., onRight)`).

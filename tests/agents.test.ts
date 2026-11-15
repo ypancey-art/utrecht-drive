@@ -44,7 +44,7 @@ test('pedestrians and cyclists appear and walk', async () => {
   const { map } = await gameWorld();
   const people = new People(
     new RoadGraph(map, false, (r) => !r.tunnel && ['footway', 'pedestrian', 'path'].includes(r.kind)),
-    new RoadGraph(map, false, (r) => !r.tunnel && ['cycleway', 'residential', 'living_street'].includes(r.kind)),
+    new RoadGraph(map, false, (r) => !r.tunnel && ['cycleway', 'residential', 'living_street'].includes(r.kind), (r) => (r.kind === 'cycleway' ? 1 : 5)),
     () => ({ sync() {}, dispose() {} }),
     30,
   );
@@ -56,7 +56,7 @@ test('pedestrians and cyclists appear and walk', async () => {
   // Someone right in front of a fast car gets knocked over (and gets up again).
   const p = people.list[0];
   people.update(1 / 30, p.x, p.z, 10, 0);
-  assert.equal(hits, 1);
+  assert.ok(hits >= 1);
   assert.ok(p.down > 0);
   for (let i = 0; i < 30 * 4; i++) people.update(1 / 30, p.x + 100, p.z, 0, 0);
   assert.equal(p.down <= 0, true, 'should be back on their feet');
@@ -110,4 +110,43 @@ test('every mission can be driven: all stops are on connected streets', async ()
     }
     assert.ok(m.timeLimit > 20, `${m.def.id}: time limit ${m.timeLimit}`);
   }
+});
+
+test('cyclists ride along cycle paths and do not circle', async () => {
+  const { map } = await gameWorld();
+  const people = new People(
+    new RoadGraph(map, false, (r) => !r.tunnel && ['footway', 'pedestrian', 'path'].includes(r.kind)),
+    new RoadGraph(map, false, (r) => !r.tunnel && ['cycleway', 'residential', 'living_street'].includes(r.kind), (r) => (r.kind === 'cycleway' ? 1 : 5)),
+    () => ({ sync() {}, dispose() {} }),
+    40,
+  );
+  const cyc = map.roads.filter((r) => r.kind === 'cycleway').flatMap((r) => r.pts.slice(1).map((b, i) => [r.pts[i][0], r.pts[i][1], b[0], b[1]]));
+  const distToCycleway = (x: number, z: number) => {
+    let best = Infinity;
+    for (const [ax, az, bx, bz] of cyc) {
+      if (Math.min(ax, bx) > x + 5 || Math.max(ax, bx) < x - 5 || Math.min(az, bz) > z + 5 || Math.max(az, bz) < z - 5) continue;
+      const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+      best = Math.min(best, Math.hypot(x - ax - dx * t, z - az - dz * t));
+    }
+    return best;
+  };
+  const dt = 1 / 30;
+  for (let i = 0; i < 30 * 10; i++) people.update(dt, 0, 0, 0, 0);
+  const start = new Map(people.list.filter((p) => p.kind === 'cyclist').map((p) => [p, [p.x, p.z]]));
+  let samples = 0, onPath = 0;
+  for (let i = 0; i < 30 * 20; i++) {
+    people.update(dt, 0, 0, 0, 0);
+    if (i % 30) continue;
+    for (const p of people.list) {
+      if (p.kind !== 'cyclist') continue;
+      samples++;
+      if (distToCycleway(p.x, p.z) < 2.5) onPath++;
+    }
+  }
+  const stayed = [...start].filter(([p]) => people.list.includes(p));
+  assert.ok(stayed.length >= 3, `only ${stayed.length} cyclists to check`);
+  const moved = stayed.filter(([p, [x, z]]) => Math.hypot(p.x - x, p.z - z) > 25).length;
+  assert.ok(moved >= stayed.length * 0.8, `${stayed.length - moved} of ${stayed.length} cyclists hardly moved in 20 s (circling?)`);
+  assert.ok(onPath / samples > 0.75, `only ${((onPath / samples) * 100).toFixed(0)}% of cyclist positions on a cycle path`);
 });

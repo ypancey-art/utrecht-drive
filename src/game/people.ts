@@ -19,6 +19,11 @@ interface Person {
   heading: number;
   speed: number;
   path: Pt[];
+  /** Start of the current path segment (the person moves along from -> path[0]). */
+  from: Pt;
+  /** Position along the path line, without the keep-right offset. */
+  lx: number;
+  lz: number;
   phase: number;
   side: number; // keep-right offset
   down: number; // seconds left lying down after being hit
@@ -80,7 +85,7 @@ export class People {
 
   /** Testing aid: put someone at a spot, standing still. */
   placeAt(kind: PersonKind, x: number, z: number, heading: number) {
-    this.list.push({ kind, x, z, heading, path: [], speed: 0, phase: 1, side: 0, down: 0, fallDir: 0, visual: this.makeVisual(kind) });
+    this.list.push({ kind, x, z, heading, path: [], from: [x, z], lx: x, lz: z, speed: 0, phase: 1, side: 0, down: 0, fallDir: 0, visual: this.makeVisual(kind) });
   }
 
   clear() {
@@ -95,14 +100,16 @@ export class People {
   private spawn(px: number, pz: number, kind: PersonKind) {
     const g = kind === 'cyclist' ? this.bikeGraph : this.walkGraph;
     if (!g.pts.length) return;
-    const n = g.randomNodeNear(px, pz, 15, 140);
+    const bike = kind === 'cyclist';
+    const n = g.randomNodeNear(px, pz, 15, 140, bike);
     if (n < 0) return;
-    const goal = g.randomNodeNear(g.pts[n][0], g.pts[n][1], 60, 250);
+    const goal = g.randomNodeNear(g.pts[n][0], g.pts[n][1], 80, 300, bike);
     const path = g.route(n, goal);
     if (path.length < 2) return;
     const [x, z] = path[0];
+    const heading = Math.atan2(path[1][1] - z, path[1][0] - x);
     this.list.push({
-      kind, x, z, heading: 0, path: path.slice(1),
+      kind, x, z, heading, path: path.slice(1), from: path[0], lx: x, lz: z,
       speed: (kind === 'cyclist' ? RIDE : WALK) * (0.8 + Math.random() * 0.4),
       phase: Math.random() * 10, side: kind === 'cyclist' ? 0.7 : 0.4 + Math.random() * 0.5,
       down: 0, fallDir: 0, visual: this.makeVisual(kind),
@@ -113,27 +120,42 @@ export class People {
     if (!p.path.length) {
       // Arrived: pick a new destination from here.
       const g = p.kind === 'cyclist' ? this.bikeGraph : this.walkGraph;
-      const n = g.nearest(p.x, p.z);
-      p.path = g.route(n, g.randomNodeNear(p.x, p.z, 60, 250)).slice(1);
-      if (!p.path.length) return;
+      const n = g.nearest(p.lx, p.lz);
+      if (n < 0) return;
+      const path = g.route(n, g.randomNodeNear(p.lx, p.lz, 80, 300, p.kind === 'cyclist'));
+      if (path.length < 2) return;
+      p.from = [p.lx, p.lz];
+      p.path = path.slice(1);
     }
-    const [tx, tz] = p.path[0];
-    // Aim a little to the right of the path line (keep right).
-    const dx0 = tx - p.x, dz0 = tz - p.z, d0 = Math.hypot(dx0, dz0) || 1;
-    const ax = tx - (dz0 / d0) * p.side, az = tz + (dx0 / d0) * p.side;
-    const dx = ax - p.x, dz = az - p.z, d = Math.hypot(dx, dz);
-    if (d < 0.8) {
-      p.path.shift();
-      return;
+    // Move along the path line itself (no steering, so nobody can orbit a waypoint).
+    let step = p.speed * dt;
+    while (step > 0 && p.path.length) {
+      const [tx, tz] = p.path[0];
+      const d = Math.hypot(tx - p.lx, tz - p.lz);
+      if (d <= step) {
+        step -= d;
+        p.lx = tx;
+        p.lz = tz;
+        p.from = p.path.shift()!;
+      } else {
+        p.lx += ((tx - p.lx) / d) * step;
+        p.lz += ((tz - p.lz) / d) * step;
+        step = 0;
+      }
     }
-    const want = Math.atan2(dz, dx);
+    // Keep right of the line, and ease the shown position/heading so corners look smooth.
+    const to = p.path[0] ?? [p.lx + Math.cos(p.heading), p.lz + Math.sin(p.heading)];
+    const sx = to[0] - p.from[0], sz = to[1] - p.from[1], sl = Math.hypot(sx, sz) || 1;
+    const wx = p.lx - (sz / sl) * p.side, wz = p.lz + (sx / sl) * p.side;
+    const k = Math.min(1, dt * 5);
+    const mx = (wx - p.x) * k, mz = (wz - p.z) * k;
+    p.x += mx;
+    p.z += mz;
+    const want = Math.atan2(sz, sx);
     let diff = want - p.heading;
     while (diff > Math.PI) diff -= 2 * Math.PI;
     while (diff < -Math.PI) diff += 2 * Math.PI;
-    p.heading += Math.max(-dt * 4, Math.min(dt * 4, diff));
-    const step = p.speed * dt * (Math.abs(diff) > 1.2 ? 0.4 : 1);
-    p.x += Math.cos(p.heading) * step;
-    p.z += Math.sin(p.heading) * step;
-    p.phase += step * (p.kind === 'cyclist' ? 1.2 : 2.6);
+    p.heading += diff * Math.min(1, dt * 6);
+    p.phase += p.speed * dt * (p.kind === 'cyclist' ? 1.2 : 2.6);
   }
 }

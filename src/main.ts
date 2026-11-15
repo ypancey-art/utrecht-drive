@@ -22,7 +22,7 @@ import { makePersonVisual } from './art/peopleMeshes';
 import { Traffic } from './game/traffic';
 import { buildMissions, MissionRunner, MISSION_SIZE, REACH_RADIUS } from './game/missions';
 import { CARS, POLICE, carById, upgradedStats, armourFactor } from './game/cars';
-import { loadProgress, saveProgress, upgradesFor } from './game/progress';
+import { GRADES, loadProgress, saveProgress, upgradesFor } from './game/progress';
 import { buildMapMeshes, bridgeSegments } from './art/mapMeshes';
 import { buildTrees, buildLamps, buildGreenery } from './art/sceneryMeshes';
 import { buildCarModel, loadCarAssets, type CarModel } from './art/carModels';
@@ -223,7 +223,7 @@ async function start() {
       dispose: () => scene.remove(m.body, ...m.wheels),
     };
   });
-  police.onReinforce = () => toast(t('policeMore'), 2);
+  // More police cars joining is shown by the stars and heard by the sirens: no pop-up.
   police.inWater = (x, z) => water.contains(x, z) && scenery.grid.edgeDistance(x, z) > 0.3;
 
   // --- Traffic ---
@@ -237,14 +237,13 @@ async function start() {
   // --- Pedestrians and cyclists ---
   const people = new People(
     new RoadGraph(map, false, (r) => !r.tunnel && ['footway', 'pedestrian', 'path'].includes(r.kind)),
-    new RoadGraph(map, false, (r) => !r.tunnel && ['cycleway', 'residential', 'living_street'].includes(r.kind)),
+    new RoadGraph(map, false, (r) => !r.tunnel && ['cycleway', 'residential', 'living_street'].includes(r.kind), (r) => (r.kind === 'cycleway' ? 1 : 5)),
     (kind) => makePersonVisual(scene, kind),
     isTouch ? 18 : 40,
   );
   people.onHit = (strength) => {
     police.addCrash(30 * armourFactor(carById(progress.carId), upgradesFor(progress, progress.carId)));
     sound.crash(0.3 + strength * 0.4);
-    toast(t('hitPerson'), 2.5);
   };
 
   // --- Missions ---
@@ -289,7 +288,6 @@ async function start() {
         [{ label: t('notNow'), value: false }, { label: t('start'), value: true, primary: true }]);
       if (go && progress.grade && (await mathGate(size.problems, progress.grade))) {
         runner.begin(m);
-        toast(m.def.title[lang], 2);
       } else runner.snooze(m);
       refreshMarkers();
     });
@@ -319,6 +317,7 @@ async function start() {
         { label: t('resume'), value: 'resume', primary: true },
         { label: t('garage'), value: 'garage' },
         { label: t('changeGrade'), value: 'grade' },
+        { label: t('earnCoins'), value: 'earn' },
         { label: t('startChase'), value: 'chase' },
       ]);
       if (choice === 'garage') {
@@ -326,6 +325,24 @@ async function start() {
           save();
           buildPlayer();
         });
+      } else if (choice === 'earn' && progress.grade) {
+        // Practise for coins: as many sums as you like. Harder grades pay a bit more, and every
+        // 5 right in a row gives a bonus.
+        const per = 4 + GRADES.indexOf(progress.grade);
+        let earned = 0;
+        await mathGate(0, progress.grade, t('earnCoins'), (streak) => {
+          if (streak > 0) {
+            const bonus = streak % 5 === 0 ? 5 * per : 0;
+            earned += per + bonus;
+            progress.coins += per + bonus;
+            coinsEl.textContent = `🪙 ${progress.coins}`;
+            save();
+            if (bonus) sound.coin();
+            return t('earnStatus', { n: earned, p: per }) + (bonus ? ` · ${t('streakBonus', { n: bonus })}` : '');
+          }
+          return t('earnStatus', { n: earned, p: per });
+        });
+        if (earned) toast(`🪙 +${earned}`, 1.5);
       } else if (choice === 'chase') {
         police.startChase();
         toast(t('policeComing'), 2.5);
@@ -419,7 +436,7 @@ async function start() {
         lastCrashSound = now;
       }
       crashLoud = 0;
-      if (police.stars > starsBefore) toast(t(starsBefore ? 'policeMore' : 'policeComing'), 2.5);
+      if (police.stars > 0 && starsBefore === 0) toast(t('policeComing'), 2);
 
       // Water: the car sinks, then comes back on the nearest road.
       const cp = car.body.translation();
@@ -427,7 +444,7 @@ async function start() {
         if (cp.y < 1.2 && water.contains(cp.x, cp.z) && scenery.grid.edgeDistance(cp.x, cp.z) > 0.3) {
           car.startSinking();
           sound.splash();
-          toast(t('splash'), 3);
+          toast(t('splash'), 2);
         }
       } else if (car.sinking > 3) {
         car.stopSinking();
@@ -455,7 +472,7 @@ async function start() {
         save();
         sound.coin();
         police.clear(true);
-        toast(t('escaped', { n: reward }), 3);
+        toast(t('escaped', { n: reward }), 2);
       } else if (pr === 'caught') {
         car.update(STOP, world.timestep);
         caught();
@@ -465,7 +482,7 @@ async function start() {
       const before = runner.active;
       const res = runner.update(dt, cp.x, cp.z);
       if (res === 'checkpoint') {
-        toast(t('checkpoint', { i: runner.stop, n: runner.active!.stops.length }), 1.5);
+        sound.coin();
         refreshMarkers();
       } else if (res === 'complete' && before) {
         const reward = MISSION_SIZE[before.def.size].reward;
@@ -473,7 +490,7 @@ async function start() {
         sound.coin();
         if (!progress.missionsDone.includes(before.def.id)) progress.missionsDone.push(before.def.id);
         save();
-        toast(t('complete', { n: reward }), 3);
+        toast(t('complete', { n: reward }), 2.5);
         refreshMarkers();
       } else if (res === 'failed') {
         toast(t('failed'));

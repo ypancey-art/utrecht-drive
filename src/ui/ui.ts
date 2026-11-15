@@ -81,9 +81,15 @@ export function startScreen(current: Grade | null): Promise<Grade> {
  * The math gate: solve `count` problems to continue. A wrong answer gives a new problem
  * of the same kind; after 2 wrong in a row the hint is shown. Resolves false if cancelled.
  */
-export function mathGate(count: number, grade: Grade, title = t('solveN', { n: count })): Promise<boolean> {
+export function mathGate(
+  count: number,
+  grade: Grade,
+  title = t('solveN', { n: count }),
+  /** Endless mode: called on every right answer (with the streak), returns the status text to show. */
+  onRight?: (streak: number) => string,
+): Promise<boolean> {
   return new Promise((resolve) => {
-    let solved = 0, wrongStreak = 0;
+    let solved = 0, wrongStreak = 0, streak = 0;
     let problem = makeProblem(grade, getLang());
     const progress = h('div', { class: 'dots' });
     const question = h('div', { class: 'question' });
@@ -92,12 +98,12 @@ export function mathGate(count: number, grade: Grade, title = t('solveN', { n: c
     const hint = h('div', { class: 'hint' });
     let locked = false;
     const close = modal(h('h2', {}, title), progress, question, answers, feedback, hint,
-      h('div', { class: 'row' }, button(t('cancel'), () => finish(false))));
+      h('div', { class: 'row' }, button(t('cancel'), () => finish(!!onRight))));
 
     const onKey = (e: KeyboardEvent) => {
       const n = parseInt(e.key, 10);
       if (n >= 1 && n <= 4) (answers.children[n - 1] as HTMLButtonElement | undefined)?.click();
-      if (e.key === 'Escape') finish(false);
+      if (e.key === 'Escape') finish(!!onRight);
     };
     window.addEventListener('keydown', onKey);
     function finish(ok: boolean) {
@@ -107,7 +113,9 @@ export function mathGate(count: number, grade: Grade, title = t('solveN', { n: c
     }
 
     function render() {
-      progress.replaceChildren(...Array.from({ length: count }, (_, i) => h('span', { class: i < solved ? 'dot on' : 'dot' })));
+      if (onRight) {
+        if (!progress.textContent) progress.textContent = onRight(-1);
+      } else progress.replaceChildren(...Array.from({ length: count }, (_, i) => h('span', { class: i < solved ? 'dot on' : 'dot' })));
       question.textContent = problem.q;
       hint.textContent = wrongStreak >= 2 ? `${t('hint')}: ${problem.hint}` : '';
       answers.replaceChildren(...choices(problem).map((v) => button(formatAnswer(v, problem, getLang()), () => answer(v))));
@@ -125,11 +133,14 @@ export function mathGate(count: number, grade: Grade, title = t('solveN', { n: c
         feedback.textContent = '';
         if (right) {
           solved++;
+          streak++;
           wrongStreak = 0;
-          if (solved >= count) return finish(true);
+          if (onRight) progress.textContent = onRight(streak);
+          else if (solved >= count) return finish(true);
           problem = makeProblem(grade, getLang());
         } else {
           wrongStreak++;
+          streak = 0;
           problem = makeProblem(grade, getLang(), problem.type);
         }
         render();
@@ -144,6 +155,7 @@ let toastTimer = 0;
 export function toast(text: string, seconds = 2.5) {
   const el = document.getElementById('toast')!;
   el.textContent = text;
+  el.classList.add('show');
   clearTimeout(toastTimer);
-  if (seconds > 0) toastTimer = window.setTimeout(() => (el.textContent = ''), seconds * 1000);
+  if (seconds > 0) toastTimer = window.setTimeout(() => el.classList.remove('show'), seconds * 1000);
 }

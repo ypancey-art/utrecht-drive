@@ -4,12 +4,22 @@ import type { MapData, Pt } from './mapData';
 export class RoadGraph {
   pts: Pt[] = [];
   edges: number[][] = [];
+  /** Cost multiplier per edge (parallel to `edges`); routes prefer cheap edges. */
+  weights: number[][] = [];
+  /** Nodes that lie on an edge with weight 1 (the preferred kind of way). */
+  preferred: Uint8Array;
   private index = new Map<string, number>();
   private grid = new Map<string, number[]>();
   private cell = 30;
 
   /** directed: follow one-way streets (for normal traffic; the police ignore them). */
-  constructor(map: MapData, directed = false, use: (r: MapData['roads'][number]) => boolean = (r) => r.drivable && !r.tunnel) {
+  constructor(
+    map: MapData,
+    directed = false,
+    use: (r: MapData['roads'][number]) => boolean = (r) => r.drivable && !r.tunnel,
+    weight: (r: MapData['roads'][number]) => number = () => 1,
+  ) {
+    const pref: number[] = [];
     const id = (p: Pt) => {
       const k = `${p[0].toFixed(1)},${p[1].toFixed(1)}`;
       let i = this.index.get(k);
@@ -18,6 +28,7 @@ export class RoadGraph {
         this.index.set(k, i);
         this.pts.push(p);
         this.edges.push([]);
+        this.weights.push([]);
         const g = this.gkey(p[0], p[1]);
         (this.grid.get(g) ?? this.grid.set(g, []).get(g)!).push(i);
       }
@@ -25,6 +36,7 @@ export class RoadGraph {
     };
     for (const r of map.roads) {
       if (!use(r)) continue;
+      const w = weight(r);
       // Split long segments so routes have waypoints at least every 15 m.
       let prev = id(r.pts[0]);
       for (let k = 1; k < r.pts.length; k++) {
@@ -34,12 +46,16 @@ export class RoadGraph {
           const cur = id(s === n ? r.pts[k] : [ax + ((bx - ax) * s) / n, az + ((bz - az) * s) / n]);
           if (cur !== prev) {
             this.edges[prev].push(cur);
-            if (!(directed && r.oneway)) this.edges[cur].push(prev);
+            this.weights[prev].push(w);
+            if (!(directed && r.oneway)) this.edges[cur].push(prev), this.weights[cur].push(w);
+            if (w <= 1) pref.push(prev, cur);
           }
           prev = cur;
         }
       }
     }
+    this.preferred = new Uint8Array(this.pts.length);
+    for (const i of pref) this.preferred[i] = 1;
   }
 
   private gkey(x: number, z: number) {
@@ -76,8 +92,10 @@ export class RoadGraph {
       if (cur === to) break;
       if (closed.has(cur)) continue;
       closed.add(cur);
-      for (const nb of this.edges[cur]) {
-        const ng = g.get(cur)! + Math.hypot(this.pts[nb][0] - this.pts[cur][0], this.pts[nb][1] - this.pts[cur][1]);
+      const E = this.edges[cur], W = this.weights[cur];
+      for (let e = 0; e < E.length; e++) {
+        const nb = E[e];
+        const ng = g.get(cur)! + W[e] * Math.hypot(this.pts[nb][0] - this.pts[cur][0], this.pts[nb][1] - this.pts[cur][1]);
         if (ng < (g.get(nb) ?? Infinity)) {
           g.set(nb, ng);
           came.set(nb, cur);
@@ -93,9 +111,10 @@ export class RoadGraph {
   }
 
   /** A random node between minD and maxD metres from (x, z). */
-  randomNodeNear(x: number, z: number, minD: number, maxD: number): number {
-    for (let tries = 0; tries < 200; tries++) {
+  randomNodeNear(x: number, z: number, minD: number, maxD: number, preferredOnly = false): number {
+    for (let tries = 0; tries < 400; tries++) {
       const i = Math.floor(Math.random() * this.pts.length);
+      if (preferredOnly && !this.preferred[i]) continue;
       const d = Math.hypot(this.pts[i][0] - x, this.pts[i][1] - z);
       if (d >= minD && d <= maxD && this.edges[i].length) return i;
     }
