@@ -21,6 +21,7 @@ Then open http://localhost:5173. Every push to `main` deploys to GitHub Pages (`
 - Buildings (footprints, measured heights, roof type, year built): [3D BAG](https://3dbag.nl) by 3DGI, CC BY 4.0.
 - Façade colours: measured from street photos on [Mapillary](https://www.mapillary.com) (CC BY-SA 4.0). Run `npm run fetch-facades` after `fetch-3d` with a Mapillary client token in `~/.mapillary_token` (never committed).
 - Car models: "Generic passenger car pack" by [Comrade1280](https://sketchfab.com/3d-models/generic-passenger-car-pack-20f9af9b8a404d5cb022ac6fe87f21f5), CC BY 4.0 (see `public/models/cars/CREDITS.txt`).
+- People: "Mini Characters" by [Kenney](https://kenney.nl/assets/mini-characters), CC0 (see `public/models/people/CREDITS.txt`).
 - Roof colours: aerial photo by [Beeldmateriaal Nederland via PDOK](https://www.pdok.nl), CC BY 4.0.
 - Trees (species and planting year): [Bomenkaart, Gemeente Utrecht](https://data.overheid.nl/dataset/utrecht-bomen), CC BY-SA 4.0.
 

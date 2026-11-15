@@ -119,3 +119,21 @@ Known gaps / next steps:
 - ⚡ stunt points (`progress.points`): air time, roof landing, loops (upside down on wheels then upright), sustained >90 km/h. 🏁 `progress.topSpeed`. HUD `.counters`.
 - Hot Wheels tracks (`scripts/place-tracks.ts`, run after place-ramps): ground → climb (≤13%) → straight through a tall building at 6.5 m (wall holes cut in mapPhysics `wallHole`, tunnel + dark openings in `art/loopMeshes.ts buildTrack`) → loop in the air → back down. Height profile lifts over roofs/streets/rail, smoothed so fast cars don't take off. Test-driven with compact and hypercar. Cars have CCD on (no tunnelling at 200 km/h). Trees and lamps near tracks are removed in placeScenery.
 - place-tracks.ts also tries: a second drive-through building after the loop (chain; rarely fits Overvecht's slabs), a long elevated ride after the loop (kept if it fits, longest wins), cruising height 6.5 or 5.6 m. Now 3 tracks (Rubicondreef, Henriëttedreef, Naxosdreef), 250-360 m of track + loop each, all test-driven with the compact and the hypercar.
+
+## 2026-11-15 (later)
+- Ramps: curved "toe" (rampProfile/rampHulls in src/art/rampMeshes.ts): starts flat, bends up to the
+  slope over 5 m; lip height/angle unchanged. Collider = convex slabs per profile segment.
+  Slow straight-on climb failures (all cars × all ramps) went from 8 to 1 (2.6 m kicker at 30% throttle).
+- Camera: ray up (ceiling) + ray car→camera against fixed, non-cylinder colliders; pulls in at
+  once, eases back out (camPull in main.ts). Fixes camera inside railway bridges.
+- Map edge: visible red/white barrier + see-through glowing screen (src/art/edgeWall.ts) at the
+  invisible physics walls.
+- Crashes with people: cartoon flight (people.ts hit()/fly(): arc, tumble, bounce, slide),
+  cyclist's bike flies separately and lies on its side, dizzy stars, comic word bursts + star
+  sparks (makeCrashFx), camera shake.
+- People models: Kenney "Mini Characters" (CC0), 14 characters merged into
+  public/models/people/people.glb (idle/walk/sit/fall clips shared, meshopt). Loader restores bone
+  names (GLTFLoader makes them unique). Riders sit on the procedural bike (RIDER_X/Y).
+  Falls back to the block people if loading fails.
+- Note: Chrome-extension screenshots right after a page load sometimes show a flipped, stale
+  frame; take a second screenshot.

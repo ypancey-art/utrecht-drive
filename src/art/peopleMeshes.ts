@@ -3,6 +3,39 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { PersonKind, PersonVisual } from '../game/people';
 import { getLang } from '../i18n';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
+
+// Animated people: Kenney "Mini Characters" (CC0, public/models/people). Until they are loaded
+// (or if loading fails) the simple block people below are used.
+let kit: { figures: THREE.Object3D[]; clips: Map<string, THREE.AnimationClip>; height: number } | null = null;
+export async function loadPeopleModels() {
+  try {
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    const g = await loader.loadAsync(`${import.meta.env.BASE_URL}models/people/people.glb`);
+    // All characters share one skeleton and one set of clips, but the loader made the bone names
+    // unique ("arm-left_3"): give them their own names back so the clips find them.
+    const names = new Set<string>();
+    g.scenes[0].traverse((o) => names.add(o.name));
+    const figures = g.scenes.map((sc) => {
+      sc.traverse((o) => {
+        const base = o.name.replace(/_\d+$/, '');
+        if (base !== o.name && names.has(base)) o.name = base;
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = true;
+          o.frustumCulled = false; // skinned: the bind-pose bounds are not where the mesh is
+        }
+      });
+      return sc;
+    });
+    const box = new THREE.Box3().setFromObject(figures[0]);
+    kit = { figures, clips: new Map(g.animations.map((a) => [a.name, a])), height: box.max.y - box.min.y };
+  } catch (e) {
+    console.warn('people models not loaded', e);
+  }
+}
 
 const SKIN = [0xf1c7a5, 0xd9a07a, 0xa86b45, 0x6e4329, 0xe8b894];
 const SHIRT = [0xd94a3a, 0x2f7fd8, 0xf2c14e, 0x43a75b, 0xffffff, 0x1d1f22, 0x8e5bd1, 0xff8a3d, 0x4fc1c9];
@@ -85,7 +118,40 @@ export function makePersonVisual(scene: THREE.Scene, kind: PersonKind): PersonVi
   bikeRoot.add(bike);
   const BIKE_PIVOT = 0.5 * s;
 
-  if (kind === 'walker') {
+  // The animated figure (when the models are loaded): faces +x, feet at y = 0.
+  let figure: THREE.Object3D | null = null;
+  let mixer: THREE.AnimationMixer | null = null;
+  const actions = new Map<string, THREE.AnimationAction>();
+  let current = '';
+  if (kit) {
+    figure = cloneSkinned(pick(kit.figures));
+    figure.rotation.y = Math.PI / 2;
+    figure.scale.setScalar(1.75 / kit.height);
+    mixer = new THREE.AnimationMixer(figure);
+    for (const [name, clip] of kit.clips) {
+      const a = mixer.clipAction(clip);
+      a.play();
+      a.paused = true;
+      a.enabled = false;
+      actions.set(name, a);
+    }
+  }
+  /** Shows one animation frozen at a time (0..1 of the clip). */
+  const pose = (name: string, t: number) => {
+    const a = actions.get(name);
+    if (!a || !mixer) return;
+    if (current !== name) {
+      for (const b of actions.values()) b.enabled = b === a;
+      a.setEffectiveWeight(1);
+      current = name;
+    }
+    a.time = (((t % 1) + 1) % 1) * a.getClip().duration;
+    mixer.update(0);
+  };
+
+  if (kind === 'walker' && figure) {
+    body.add(figure);
+  } else if (kind === 'walker') {
     const HIP = 0.85;
     body.add(mesh(upperBody(HIP, shirt, skin, hair)));
     for (const z of [-0.09, 0.09]) {
@@ -114,15 +180,21 @@ export function makePersonVisual(scene: THREE.Scene, kind: PersonKind): PersonVi
       return w;
     });
     scene.add(bikeRoot);
-    const HIP = 0.9;
-    const up = mesh(upperBody(HIP, shirt, skin, hair, true));
-    up.position.x = -0.18;
-    body.add(up);
-    for (const z of [-0.1, 0.1]) {
-      const l = leg(0.62, pants);
-      l.position.set(-0.18, HIP, z);
-      body.add(l);
-      legs.push(l);
+    if (figure) {
+      // Sitting on the saddle.
+      figure.position.set(RIDER_X, RIDER_Y, 0);
+      body.add(figure);
+    } else {
+      const HIP = 0.9;
+      const up = mesh(upperBody(HIP, shirt, skin, hair, true));
+      up.position.x = -0.18;
+      body.add(up);
+      for (const z of [-0.1, 0.1]) {
+        const l = leg(0.62, pants);
+        l.position.set(-0.18, HIP, z);
+        body.add(l);
+        legs.push(l);
+      }
     }
   }
   // Dizzy stars circling the head while lying on the ground.
@@ -149,13 +221,27 @@ export function makePersonVisual(scene: THREE.Scene, kind: PersonKind): PersonVi
         tilt.rotation.z = -flight.spin;
         body.position.y = -PIVOT; // so the body turns around its middle
         // Arms and legs flail.
-        legs[0].rotation.z = Math.sin(flight.spin * 3) * 0.9;
-        legs[1].rotation.z = -Math.sin(flight.spin * 3) * 0.9;
+        if (figure) {
+          figure.position.set(0, 0, 0);
+          pose('fall', flight.spin / 4);
+        } else {
+          legs[0].rotation.z = Math.sin(flight.spin * 3) * 0.9;
+          legs[1].rotation.z = -Math.sin(flight.spin * 3) * 0.9;
+        }
       } else {
         tilt.rotation.z = -fallen * (Math.PI / 2) * 0.95;
         tilt.position.y = fallen * 0.15 + (flight?.y ?? 0);
         body.position.y = 0;
-        if (kind === 'walker' || flight) {
+        if (figure) {
+          if (flight) {
+            figure.position.set(0, 0, 0);
+            pose('fall', 0.5);
+          } else if (kind === 'walker') pose('walk', phase / (2 * Math.PI));
+          else {
+            figure.position.set(RIDER_X, RIDER_Y, 0);
+            pose('sit', SIT_T);
+          }
+        } else if (kind === 'walker' || flight) {
           const swing = Math.sin(phase) * 0.5 * (1 - fallen);
           legs[0].rotation.z = flight ? 0.3 : swing;
           legs[1].rotation.z = flight ? -0.2 : -swing;
@@ -195,6 +281,12 @@ export function makePersonVisual(scene: THREE.Scene, kind: PersonKind): PersonVi
       }
     },
     dispose() {
+      // The figure shares its geometry with the loaded models: take it out before disposing.
+      if (figure) {
+        mixer!.stopAllAction();
+        mixer!.uncacheRoot(figure);
+        figure.removeFromParent();
+      }
       scene.remove(root);
       scene.remove(bikeRoot);
       for (const r of [root, bikeRoot])
@@ -205,6 +297,9 @@ export function makePersonVisual(scene: THREE.Scene, kind: PersonKind): PersonVi
     },
   };
 }
+
+// Where the rider sits on the bike (tuned by eye), and which moment of the "sit" clip to show.
+const RIDER_X = -0.2, RIDER_Y = 0.62, SIT_T = 0.99;
 
 const WORDS = { nl: ['BOEM!', 'PATS!', 'KNAL!', 'OEPS!'], en: ['BAM!', 'POW!', 'BONK!', 'OOPS!'] };
 

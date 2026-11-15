@@ -22,7 +22,7 @@ import { sound } from './audio/sound';
 import { tileStatic } from './art/tiles';
 import { applyStreetLooks } from './game/streetLooks';
 import { People } from './game/people';
-import { makePersonVisual, makeCrashFx } from './art/peopleMeshes';
+import { makePersonVisual, makeCrashFx, loadPeopleModels } from './art/peopleMeshes';
 import { Traffic } from './game/traffic';
 import { buildMissions, MissionRunner, MISSION_SIZE, REACH_RADIUS } from './game/missions';
 import { CARS, POLICE, carById, upgradedStats, armourFactor } from './game/cars';
@@ -96,7 +96,7 @@ const mark = (name: string) => {
 };
 
 async function start() {
-  const [, map] = await Promise.all([RAPIER.init(), loadMap(), loadCarAssets([...CARS, POLICE])]);
+  const [, map] = await Promise.all([RAPIER.init(), loadMap(), loadCarAssets([...CARS, POLICE]), loadPeopleModels()]);
   mark('load files');
   const progress = loadProgress();
   const save = () => {

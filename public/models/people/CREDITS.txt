@@ -1,0 +1,6 @@
+people.glb: pedestrians and cyclists in Utrecht Drive
+  Original: "Mini Characters" (2.0) by Kenney (www.kenney.nl)
+  https://kenney.nl/assets/mini-characters
+  Licence: CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/)
+  Changes: 14 everyday characters (female a-f, male a-g, worker) merged into one file,
+  only the idle, walk, sit and fall animations kept (shared by all), meshopt-compressed.
