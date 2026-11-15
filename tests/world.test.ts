@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gameWorld } from './world';
 import { Car } from '../src/game/car';
+import { loopEntry } from '../src/game/loops';
 import { CARS } from '../src/game/cars';
 import { WaterMap } from '../src/game/water';
 
@@ -58,10 +59,13 @@ for (const id of ['compact', 'sport']) {
     const spec = CARS.find((c) => c.id === id)!;
     assert.ok((map.ramps ?? []).length >= 8, 'ramps missing from the map data');
     for (const r of map.ramps!) {
+      if (r.kind === 'kick' && id !== 'compact') continue; // fast cars may fly over a kicker's roof
       const ux = Math.cos(r.yaw), uz = Math.sin(r.yaw);
       const car = new Car(world, spec.stats, spec.dims);
-      car.place(r.x - ux * (r.len / 2 + 38), r.z - uz * (r.len / 2 + 38), ux, uz);
-      let sank = false, maxY = 0;
+      // Start where place-ramps.ts guarantees a free run-up for this kind of ramp.
+      const run = r.len / 2 + (r.kind === 'water' ? 38 : r.kind === 'kick' ? 36 : 26);
+      car.place(r.x - ux * run, r.z - uz * run, ux, uz);
+      let sank = false, maxY = 0, landed = false;
       for (let i = 0; i < 60 * 9; i++) {
         const p = car.body.translation(), q = car.body.rotation();
         const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
@@ -69,17 +73,51 @@ for (const id of ['compact', 'sport']) {
         car.update({ throttle: 1, steer: Math.max(-1, Math.min(1, ang * 3)), handbrake: false }, world.timestep);
         world.step();
         maxY = Math.max(maxY, p.y);
+        if (r.kind === 'kick' && car.grounded && !car.flipped && p.y > r.roofH! + 0.3) {
+          landed = true;
+          break;
+        }
         if (p.y < 1.2 && water.contains(p.x, p.z) && scenery.grid.edgeDistance(p.x, p.z) > 0.3) {
           sank = true;
           break;
         }
-        if ((p.x - r.x) * ux + (p.z - r.z) * uz > r.len / 2 + (r.kind === 'roof' ? 12 : 30)) break;
+        if ((p.x - r.x) * ux + (p.z - r.z) * uz > r.len / 2 + (r.kind === 'roof' ? 12 : r.kind === 'kick' ? 60 : 30)) break;
       }
       const where = `${r.kind} ramp at ${r.x},${r.z}`;
       assert.ok(!sank, `${where}: the car sank`);
       assert.ok(!car.flipped, `${where}: the car flipped`);
-      if (r.kind === 'roof') assert.ok(car.body.translation().y > r.h, `${where}: did not get onto the roof (y ${car.body.translation().y.toFixed(1)})`);
+      if (r.kind === 'kick') assert.ok(landed, `${where}: did not land on the roof`);
+      else if (r.kind === 'roof') assert.ok(car.body.translation().y > r.h, `${where}: did not get onto the roof (y ${car.body.translation().y.toFixed(1)})`);
       else assert.ok(maxY > 2.5, `${where}: no real jump`);
+      car.dispose();
+    }
+  });
+}
+
+for (const id of ['compact', 'sport']) {
+  test(`every loop takes the ${id} all the way round`, async () => {
+    const { map, world } = await gameWorld();
+    const spec = CARS.find((c) => c.id === id)!;
+    assert.ok((map.loops ?? []).length >= 3, 'loops missing from the map data');
+    for (const l of map.loops!) {
+      const e = loopEntry(l);
+      const car = new Car(world, spec.stats, spec.dims);
+      car.place(e.x - e.dirX * 45, e.z - e.dirZ * 45, e.dirX, e.dirZ);
+      let maxY = 0, out = false;
+      for (let i = 0; i < 60 * 14; i++) {
+        car.update({ throttle: 1, steer: 0, handbrake: false }, world.timestep);
+        world.step();
+        const p = car.body.translation();
+        maxY = Math.max(maxY, p.y);
+        const along = (p.x - l.x) * e.dirX + (p.z - l.z) * e.dirZ;
+        if (maxY > l.r * 2 - 1 && along > 14 && p.y < 1.5) {
+          out = true;
+          break;
+        }
+      }
+      const where = `loop at ${l.x},${l.z}`;
+      assert.ok(maxY > l.r * 2 - 1, `${where}: did not reach the top (max ${maxY.toFixed(1)} m)`);
+      assert.ok(out && !car.flipped, `${where}: did not come out on its wheels`);
       car.dispose();
     }
   });

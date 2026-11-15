@@ -28,7 +28,8 @@ test('3D building data stays inside the binary file', () => {
 test('ramps are inside the map and not on a street', () => {
   for (const r of map.ramps ?? []) {
     assert.ok(Math.abs(r.x) < 700 && Math.abs(r.z) < 700, `ramp at ${r.x},${r.z} outside the map`);
-    assert.ok(r.h > 0 && r.len > r.h * 2, `ramp at ${r.x},${r.z} is too steep`);
+    // Kickers are short and steep on purpose (up to about 30 degrees); other ramps are gentler.
+    assert.ok(r.h > 0 && r.len > r.h * (r.kind === 'kick' ? 1.7 : 2), `ramp at ${r.x},${r.z} is too steep`);
   }
 });
 
@@ -45,4 +46,11 @@ test('no hedge crosses a street', () => {
       for (const r of streets)
         for (let j = 0; j < r.pts.length - 1; j++)
           assert.ok(!cross(h.pts[i], h.pts[i + 1], r.pts[j], r.pts[j + 1]), `hedge crosses ${r.name || r.kind}`);
+});
+
+test('loops are inside the map and well apart', () => {
+  const loops = map.loops ?? [];
+  assert.ok(loops.length >= 3, 'expected a few loops');
+  for (const l of loops) assert.ok(Math.abs(l.x) < 680 && Math.abs(l.z) < 680, `loop at ${l.x},${l.z} near the map edge`);
+  for (const a of loops) for (const b of loops) if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > 200, 'two loops too close together');
 });

@@ -106,7 +106,7 @@ export function openGarage(p: Progress, grade: Progress['grade'], onChange: () =
       const owned = p.owned.includes(spec.id);
       const u = upgradesFor(p, spec.id);
       coins.textContent = `🪙 ${p.coins}`;
-      tabs.replaceChildren(...CARS.map((c) => button(c.name, () => {
+      tabs.replaceChildren(...CARS.map((c) => button(c.premium ? `★ ${c.name}` : c.name, () => {
         viewing = c.id;
         render();
       }, c.id === viewing ? 'primary' : '')));
@@ -114,15 +114,16 @@ export function openGarage(p: Progress, grade: Progress['grade'], onChange: () =
 
       const st = upgradedStats(spec, u);
       const stats = h('div', { class: 'stats' },
-        bar(t('statSpeed'), st.maxSpeed / 52),
+        bar(t('statSpeed'), st.maxSpeed / 62),
         bar(t('statHandling'), (st.grip * st.maxSteer) / 2.6),
         bar(t('statTough'), 0.4 / armourFactor(spec, u)),
       );
       const rows: HTMLElement[] = [stats];
       if (!owned) {
-        rows.push(h('p', { class: 'muted' }, t('newCar', { n: NEW_CAR_PROBLEMS })));
+        const sums = spec.problems ?? NEW_CAR_PROBLEMS;
+        rows.push(h('p', { class: 'muted' }, t('newCar', { n: sums })));
         rows.push(h('div', { class: 'row' }, button(t('buy', { n: `🪙 ${spec.price}` }), async () => {
-          if (await gate(NEW_CAR_PROBLEMS, spec.price)) {
+          if (await gate(sums, spec.price)) {
             p.owned.push(spec.id);
             p.carId = spec.id;
             save();

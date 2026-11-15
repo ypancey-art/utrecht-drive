@@ -8,6 +8,8 @@ export interface CarSpec {
   name: string; // shown in the game
   model: string; // body in public/models/cars/car-pack.glb: "<node>|<length m>|<flip front/back 0/1>"
   price: number; // coins (0 = starter)
+  problems?: number; // sums to solve when buying (default 6)
+  premium?: boolean; // shown with a ★ in the garage
   colors: number[]; // paint choices; the first is the model's own colour
   stats: CarStats; // base stats, upgrades add to these
   armour: number; // crash damage multiplier (lower = tougher)
@@ -75,6 +77,37 @@ export const CARS: CarSpec[] = [
     colors: [0, 0xf2f2f2, 0x35d07f, 0xff7a1a, 0x7a4dff],
     stats: { mass: 1450, engineForce: 8700, brakeForce: 150, maxSpeed: 46, maxSteer: 0.5, grip: 3.9 },
     armour: 1.45,
+  },
+  // Premium editions: same bodies, stronger engines and special paint. They cost more coins and more sums.
+  {
+    id: 'gt', name: 'Gran Turismo', model: 'Coupe Body|4.8|0', price: 900, problems: 8, premium: true,
+    colors: [0xd4af37, 0xc3c9cf, 0x111214, 0x1d3f8f, 0x6d1020],
+    stats: { mass: 1600, engineForce: 10400, brakeForce: 155, maxSpeed: 50, maxSteer: 0.52, grip: 3.9 },
+    armour: 1.1,
+  },
+  {
+    id: 'rally', name: 'Rally 4x4', model: 'Offroad Body|4.7|1', price: 1100, problems: 9, premium: true,
+    colors: [0xf2f2f2, 0xff7a1a, 0x0b5ed7, 0x111214, 0xd4af37],
+    stats: { mass: 2000, engineForce: 10800, brakeForce: 150, maxSpeed: 47, maxSteer: 0.56, grip: 4.2 },
+    armour: 0.4,
+  },
+  {
+    id: 'truck', name: 'Monster Pickup', model: 'Pickup Body|5.6|0', price: 1300, problems: 10, premium: true,
+    colors: [0x111214, 0x35d07f, 0xd8413a, 0x7a4dff, 0xd4af37],
+    stats: { mass: 2600, engineForce: 12000, brakeForce: 150, maxSpeed: 46, maxSteer: 0.5, grip: 3.9 },
+    armour: 0.3,
+  },
+  {
+    id: 'limo', name: 'Limousine', model: 'Sedan Body|5.6|0', price: 1500, problems: 10, premium: true,
+    colors: [0x0d0e10, 0xf4f4f2, 0xd4af37, 0x3b0d1c, 0x9aa2a8],
+    stats: { mass: 2300, engineForce: 10500, brakeForce: 150, maxSpeed: 46, maxSteer: 0.48, grip: 3.6 },
+    armour: 0.7,
+  },
+  {
+    id: 'hyper', name: 'Hypercar', model: 'Sport body|4.6|1', price: 2000, problems: 12, premium: true,
+    colors: [0xd4af37, 0xc3c9cf, 0x111214, 0x00b3a4, 0xff2d55],
+    stats: { mass: 1400, engineForce: 13000, brakeForce: 170, maxSpeed: 56, maxSteer: 0.5, grip: 4.4 },
+    armour: 1.3,
   },
 ];
 

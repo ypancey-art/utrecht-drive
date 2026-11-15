@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { ShapeUtils, Vector2 } from 'three';
-import type { MapData } from './mapData';
+import type { MapData, Loop } from './mapData';
+import { loopGeometry } from './loops';
 import type { Tree } from './scenery';
 import { RAIL_H, RAIL_DECK, type Dyke } from './railway';
 import type { Item } from './playgrounds';
@@ -174,4 +175,19 @@ export function addRampPhysics(world: RAPIER.World, wedges: number[][][]) {
     const desc = RAPIER.ColliderDesc.convexHull(new Float32Array(pts.flat()));
     if (desc) world.createCollider(desc.setFriction(1), body);
   }
+}
+
+/** Loop tracks: one trimesh each (surface and side walls). */
+export function addLoopPhysics(world: RAPIER.World, loops: Loop[]): Set<number> {
+  const handles = new Set<number>();
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  for (const l of loops) {
+    const { pos, road, walls } = loopGeometry(l);
+    const P = new Float32Array(pos);
+    // Frictionless for the car body: on the tight curve its underside touches the track, and
+    // that must not brake it. The wheels have their own grip (they don't use this friction).
+    for (const I of [road, walls])
+      handles.add(world.createCollider(RAPIER.ColliderDesc.trimesh(P, new Uint32Array(I), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES).setFriction(0).setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min), body).handle);
+  }
+  return handles;
 }

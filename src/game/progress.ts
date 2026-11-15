@@ -13,7 +13,7 @@ export interface Progress {
 }
 
 const KEY = 'utrecht-drive-progress';
-const KNOWN_CARS = ['compact', 'hatch', 'sedan', 'wagon', 'suv', 'offroad', 'pickup', 'minivan', 'coupe', 'sport'];
+const KNOWN_CARS = ['compact', 'hatch', 'sedan', 'wagon', 'suv', 'offroad', 'pickup', 'minivan', 'coupe', 'sport', 'gt', 'rally', 'truck', 'limo', 'hyper'];
 const fresh = (): Progress => ({ grade: null, coins: 0, carId: 'compact', owned: ['compact'], upgrades: {}, missionsDone: [] });
 
 /** Saved in this browser only (profiles come later). */

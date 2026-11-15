@@ -3,7 +3,8 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadMap, nearestRoad } from './game/mapData';
-import { buildMapPhysics, addHedgePhysics, addRampPhysics } from './game/mapPhysics';
+import { buildMapPhysics, addHedgePhysics, addRampPhysics, addLoopPhysics } from './game/mapPhysics';
+import { buildLoops } from './art/loopMeshes';
 import { buildRamps, rampPoints } from './art/rampMeshes';
 import { Car } from './game/car';
 import { Input } from './game/input';
@@ -156,7 +157,7 @@ async function start() {
   statics.add(buildMapMeshes(map, scenery.grid, water, dyke, decks));
   mark('map meshes');
   statics.add(buildTrees(scenery.trees), buildLamps(scenery.lamps));
-  statics.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []), buildRamps(map.ramps ?? []));
+  statics.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []), buildRamps(map.ramps ?? []), buildLoops(map.loops ?? []));
   mark('trees + greenery');
   tileStatic(statics);
   mark('tiles');
@@ -171,6 +172,7 @@ async function start() {
   buildMapPhysics(world, map, scenery.trees, decks, dyke, play);
   addHedgePhysics(world, map.hedges ?? []);
   addRampPhysics(world, (map.ramps ?? []).map(rampPoints));
+  const loopColliders = addLoopPhysics(world, map.loops ?? []);
   mark('physics');
   const graph = new RoadGraph(map);
 
@@ -228,7 +230,7 @@ async function start() {
 
   // --- Traffic ---
   const lastHit = new Map<number, number>(); // traffic collider -> time of the last accident
-  const traffic = new Traffic(world, new RoadGraph(map, true), CARS, (spec, color) => {
+  const traffic = new Traffic(world, new RoadGraph(map, true), CARS.filter((c) => !c.premium), (spec, color) => {
     const m = buildCarModel(spec, color);
     scene.add(m.body, ...m.wheels);
     return { sync: (c) => syncModel(m, c), dispose: () => scene.remove(m.body, ...m.wheels) };
@@ -418,6 +420,7 @@ async function start() {
         const h1 = e.collider1(), h2 = e.collider2();
         if (h1 !== car.collider.handle && h2 !== car.collider.handle) return;
         if (police.isPoliceCollider(h1) || police.isPoliceCollider(h2) || car.sinking) return;
+        if (loopColliders.has(h1) || loopColliders.has(h2)) return; // riding a loop is not a crash
         // Landing after a jump pushes straight up: that is not a crash.
         const fd = e.maxForceDirection();
         const vertical = Math.abs(fd.y) > 0.75;
@@ -451,7 +454,8 @@ async function start() {
         spawn();
       }
 
-      flippedTime = car.flipped ? flippedTime + dt : 0;
+      // Upside down with no wheel on anything (not while riding through a loop).
+      flippedTime = car.flipped && !car.grounded ? flippedTime + dt : 0;
       if (flippedTime > 2) {
         spawn();
         flippedTime = 0;

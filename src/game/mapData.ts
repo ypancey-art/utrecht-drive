@@ -20,7 +20,10 @@ export interface Building {
   pts: Pt[];
 }
 /** A jump ramp: centre, direction of travel up the ramp (yaw, radians, 0 = +x), size. */
-export interface Ramp { x: number; z: number; yaw: number; len: number; h: number; w: number; kind: 'water' | 'roof' }
+/** water: jump over water; roof: drive up onto a roof; kick: steep kicker to jump onto a roof (roofH = that roof). */
+export interface Ramp { x: number; z: number; yaw: number; len: number; h: number; w: number; kind: 'water' | 'roof' | 'kick'; roofH?: number }
+/** A loop: (x, z) is the bottom where the car enters, yaw the direction of the loop, r its radius, d how far sideways it comes out. */
+export interface Loop { x: number; z: number; yaw: number; r: number; d: number }
 export interface CityTree { p: Pt; genus: string; species: string; year: number }
 export interface MapData {
   center: { lat: number; lon: number };
@@ -33,6 +36,7 @@ export interface MapData {
   hedges?: { pts: Pt[]; h: number }[]; // OSM barrier=hedge
   shrubs?: { pts: Pt[]; flowers?: boolean }[]; // OSM shrubbery / flower beds
   ramps?: Ramp[]; // jump ramps (scripts/place-ramps.ts)
+  loops?: Loop[]; // Hot Wheels loops (scripts/place-ramps.ts)
   green: { pts: Pt[] }[];
   woods: { pts: Pt[] }[];
   trees: Pt[];

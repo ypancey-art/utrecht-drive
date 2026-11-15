@@ -6,7 +6,7 @@ import { buildDyke } from '../src/game/railway';
 import { placeScenery } from '../src/game/scenery';
 import { WaterMap } from '../src/game/water';
 import { bridgeSegments } from '../src/art/mapMeshes';
-import { buildMapPhysics, addHedgePhysics, addRampPhysics } from '../src/game/mapPhysics';
+import { buildMapPhysics, addHedgePhysics, addRampPhysics, addLoopPhysics } from '../src/game/mapPhysics';
 import { rampPoints } from '../src/art/rampMeshes';
 
 export function loadMapData(): MapData {
@@ -18,10 +18,10 @@ export function loadMapData(): MapData {
   return map;
 }
 
-let cached: ReturnType<typeof make> | null = null;
-async function make() {
+let cached: ReturnType<typeof buildWorld> | null = null;
+/** Builds the world for a map (by default the one in public/data). */
+export async function buildWorld(map: MapData = loadMapData()) {
   await RAPIER.init();
-  const map = loadMapData();
   const dyke = buildDyke(map);
   const scenery = placeScenery(map);
   const water = new WaterMap(map);
@@ -32,8 +32,9 @@ async function make() {
   buildMapPhysics(world, map, scenery.trees, decks, dyke);
   addHedgePhysics(world, map.hedges ?? []);
   addRampPhysics(world, (map.ramps ?? []).map(rampPoints));
+  addLoopPhysics(world, map.loops ?? []);
   world.step();
   return { RAPIER, map, dyke, scenery, water, decks, world };
 }
 /** The full world (built once per test file). */
-export const gameWorld = () => (cached ??= make());
+export const gameWorld = () => (cached ??= buildWorld());

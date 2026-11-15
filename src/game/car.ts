@@ -71,6 +71,8 @@ export class Car {
       this.vehicle.setWheelSuspensionCompression(i, 4.4);
       this.vehicle.setWheelSuspensionRelaxation(i, 2.3);
       this.vehicle.setWheelMaxSuspensionTravel(i, 0.3);
+      // The default cap (6000 N) is far too low for the g-forces at the bottom of a loop.
+      this.vehicle.setWheelMaxSuspensionForce(i, stats.mass * 40);
       this.vehicle.setWheelFrictionSlip(i, stats.grip);
       this.vehicle.setWheelSideFrictionStiffness(i, 1);
     });
@@ -157,6 +159,12 @@ export class Car {
   stopSinking() {
     this.sinking = 0;
     this.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+  }
+
+  /** True if at least one wheel touches something. */
+  get grounded() {
+    for (let i = 0; i < 4; i++) if (this.vehicle.wheelIsInContact(i)) return true;
+    return false;
   }
 
   /** True if the car is lying on its side or roof. */

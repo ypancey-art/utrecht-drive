@@ -4,8 +4,14 @@
 // Each needs a long free run-up (no buildings, trees, hedges, water or railway).
 // Run after the other data steps: npx tsx scripts/place-ramps.ts
 import { readFileSync, writeFileSync } from 'node:fs';
-import type { MapData, Pt } from '../src/game/mapData';
+import RAPIER from '@dimforge/rapier3d-compat';
+import type { MapData, Pt, Ramp, Loop } from '../src/game/mapData';
 import { placeScenery } from '../src/game/scenery';
+import { buildWorld, loadMapData } from '../tests/world';
+import { Car } from '../src/game/car';
+import { CARS } from '../src/game/cars';
+import { rampPoints } from '../src/art/rampMeshes';
+import { loopSections, loopEntry, LOOP_W } from '../src/game/loops';
 
 const DATA = 'public/data/overvecht.json';
 const map: MapData = JSON.parse(readFileSync(DATA, 'utf8'));
@@ -52,9 +58,13 @@ const free = (x: number, z: number, ux: number, uz: number, len: number, w: numb
   return true;
 };
 const onRoad = (x: number, z: number) => grid.edgeDistance(x, z) < 0.5;
+// Streets cars drive on (footpaths and cycle paths may pass under a ramp's run-up, not streets).
+const street = new Uint8Array(N * N);
+for (const r of map.roads) if (r.drivable && !r.tunnel) for (let i = 0; i < r.pts.length - 1; i++) fillLine(r.pts[i], r.pts[i + 1], r.width / 2 + 0.5, street);
+/** Would a ramp of length len (from (x,z) along (ux,uz), width w) stand on a street anywhere? */
+const rampOnRoad = (x: number, z: number, ux: number, uz: number, len: number, w: number) => !free(x, z, ux, uz, len, w + 1, street);
 const inMap = (x: number, z: number) => Math.abs(x) < 700 && Math.abs(z) < 700;
 
-export interface Ramp { x: number; z: number; yaw: number; len: number; h: number; w: number; kind: 'water' | 'roof' }
 const ramps: Ramp[] = [];
 const far = (x: number, z: number, d: number) => ramps.every((r) => Math.hypot(r.x - x, r.z - z) > d);
 
@@ -78,7 +88,7 @@ for (let z = -H + 40; z < H - 40; z += 4)
       if (!free(x, z, -ux, -uz, WL + 40, W, water) || !free(x, z, -ux, -uz, WL + 40, W, solid)) continue;
       // The ramp itself must not stand on a road.
       const cx = x - ux * (WL / 2), cz = z - uz * (WL / 2);
-      if (onRoad(cx, cz) || onRoad(x, z) || onRoad(x - ux * WL, z - uz * WL)) continue;
+      if (rampOnRoad(x - ux * WL, z - uz * WL, ux, uz, WL, W)) continue;
       if (!inMap(x - ux * (WL + 40), z - uz * (WL + 40)) || !inMap(x + ux * (t2 + 26), z + uz * (t2 + 26))) continue;
       cands.push({ x: cx, z: cz, yaw: a, len: WL, h: WH, w: W, kind: 'water', score: -Math.abs(t2 - 14) });
     }
@@ -91,19 +101,96 @@ for (const c of cands) {
   ramps.push(r);
 }
 
-// ---- roof ramps: flat roofs 3-8 m high, a long wall with open ground in front of it
-const roofCands: (Ramp & { score: number })[] = [];
+// ---- kickers: a short steep ramp a few metres in front of a low flat-roofed building, to
+// jump up onto its roof. Every candidate is test-driven in the real physics world with a slow
+// and a fast car; only kickers where the starter car lands on the roof are kept.
+const KL = 5, KH = 2.0;
+const kickCands: (Ramp & { score: number; wall: string })[] = [];
 for (const b of map.buildings) {
-  if (b.eave || b.church || b.h < 3 || b.h > 8) continue;
+  if (b.eave || b.church || b.h < 2.8 || b.h > 6.5) continue;
   const pts = b.pts;
   let area = 0;
   for (let i = 0; i < pts.length - 1; i++) area += pts[i][0] * pts[i + 1][1] - pts[i + 1][0] * pts[i][1];
-  if (Math.abs(area / 2) < 250) continue;
+  if (Math.abs(area / 2) < 120) continue;
   const sign = area > 0 ? 1 : -1;
   for (let i = 0; i < pts.length - 1; i++) {
     const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
     const len = Math.hypot(bx - ax, bz - az);
-    if (len < 14) continue;
+    if (len < 12) continue;
+    const nx = (sign * (bz - az)) / len, nz = (sign * -(bx - ax)) / len;
+    const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+    let roof = 0;
+    for (let d = 1; d < 60; d++) { if (!at(solid, mx - nx * d, mz - nz * d)) break; roof = d; }
+    if (roof < 14) continue;
+    for (const gap of [6, 7, 8, 9, 10, 11, 12]) {
+      const lx = mx + nx * gap, lz = mz + nz * gap; // the kicker's lip
+      if (!free(mx + nx * 0.8, mz + nz * 0.8, nx, nz, gap + KL + 38, W, solid) || !free(mx, mz, nx, nz, gap + KL + 38, W, water)) continue;
+      const cx = lx + nx * (KL / 2), cz = lz + nz * (KL / 2);
+      if (rampOnRoad(lx, lz, nx, nz, KL, W)) continue;
+      if (!inMap(lx + nx * (KL + 38), lz + nz * (KL + 38))) continue;
+      for (const kh of [KH, 2.6]) kickCands.push({ x: cx, z: cz, yaw: Math.atan2(-nz, -nx), len: KL, h: kh, w: W, kind: 'kick', roofH: b.h, score: roof - Math.abs(gap - 9) * 0.1, wall: `${mx},${mz}` });
+    }
+  }
+}
+kickCands.sort((a, b) => b.score - a.score);
+await RAPIER.init();
+let { world } = await buildWorld({ ...loadMapData(), ramps: [], loops: [] });
+let rampBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+/** Drives a car (full throttle, steering straight) at a ramp; true if it ends up on the roof. */
+function landsOnRoof(r: Ramp, carId: string) {
+  const spec = CARS.find((c) => c.id === carId)!;
+  const ux = Math.cos(r.yaw), uz = Math.sin(r.yaw);
+  const col = world.createCollider(RAPIER.ColliderDesc.convexHull(new Float32Array(rampPoints(r).flat()))!.setFriction(1), rampBody);
+  const car = new Car(world, spec.stats, spec.dims);
+  car.place(r.x - ux * (r.len / 2 + 36), r.z - uz * (r.len / 2 + 36), ux, uz);
+  let ok = false;
+  for (let i = 0; i < 60 * 9; i++) {
+    const p = car.body.translation(), q = car.body.rotation();
+    const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
+    const ang = Math.atan2(fx * uz - fz * ux, fx * ux + fz * uz);
+    car.update({ throttle: 1, steer: Math.max(-1, Math.min(1, ang * 3)), handbrake: false }, world.timestep);
+    world.step();
+    const along = (p.x - r.x) * ux + (p.z - r.z) * uz;
+    if (process.env.DEBUG_KICK && i % 6 === 0 && along > -10) console.log(carId, along.toFixed(1), p.y.toFixed(2), car.speed.toFixed(1));
+    // Landed: wheels touching something well above the ground, upright, past the wall.
+    let contact = 0;
+    for (let w = 0; w < 4; w++) if (car.vehicle.wheelIsInContact(w)) contact++;
+    if (contact >= 3 && p.y > r.roofH! + 0.3 && along > r.len / 2 + 4 && !car.flipped) { ok = true; break; }
+    if (along > r.len / 2 + 60 || (p.y < 1.5 && along > r.len / 2 + 2)) break; // fell short, hit the wall or flew over
+  }
+  car.dispose();
+  world.removeCollider(col, false);
+  return ok;
+}
+let tried = 0;
+const usedWalls = new Set<string>();
+for (const c of kickCands) {
+  if (ramps.filter((r) => r.kind === 'kick').length >= 8) break;
+  if (usedWalls.has(c.wall) || !far(c.x, c.z, 30)) continue;
+  const { score: _s, wall, ...r } = c;
+  tried++;
+  // The starter car must make it at full throttle; faster cars can ease off, slower ones may need upgrades.
+  if (landsOnRoof(r, 'compact')) {
+    ramps.push(r);
+    usedWalls.add(wall);
+    console.log('kicker', r.x.toFixed(0), r.z.toFixed(0), 'roof', r.roofH, 'kicker', r.h, 'minivan', landsOnRoof(r, 'minivan'), 'hyper', landsOnRoof(r, 'hyper'));
+  }
+}
+console.log(`kickers: ${kickCands.length} candidates, ${tried} test-driven`);
+
+// ---- roof ramps: flat roofs 3-8 m high, a long wall with open ground in front of it
+const roofCands: (Ramp & { score: number })[] = [];
+for (const b of map.buildings) {
+  if (b.eave || b.church || b.h < 2.8 || b.h > 12) continue;
+  const pts = b.pts;
+  let area = 0;
+  for (let i = 0; i < pts.length - 1; i++) area += pts[i][0] * pts[i + 1][1] - pts[i + 1][0] * pts[i][1];
+  if (Math.abs(area / 2) < 100) continue;
+  const sign = area > 0 ? 1 : -1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < 8) continue;
     // Outward normal and the middle of the wall.
     const nx = (sign * (bz - az)) / len, nz = (sign * -(bx - ax)) / len;
     const mx = (ax + bx) / 2, mz = (az + bz) / 2;
@@ -111,25 +198,69 @@ for (const b of map.buildings) {
     // The roof must continue a good way past the wall (so you don't fly off straight away).
     let roof = 0;
     for (let d = 1; d < 40; d++) { if (!at(solid, mx - nx * d, mz - nz * d)) break; roof = d; }
-    if (roof < 12) continue;
+    if (roof < 8) continue;
     const sx = mx + nx * 0.6, sz = mz + nz * 0.6; // ramp top lip, against the wall
-    if (!free(sx + nx * 0.5, sz + nz * 0.5, nx, nz, L + 35, W, solid) || !free(sx, sz, nx, nz, L + 35, W, water)) continue;
+    if (!free(sx + nx * 0.5, sz + nz * 0.5, nx, nz, L + 28, W, solid) || !free(sx, sz, nx, nz, L + 28, W, water)) continue;
     const cx = sx + nx * (L / 2), cz = sz + nz * (L / 2);
-    if (onRoad(cx, cz) || onRoad(sx + nx * L, sz + nz * L)) continue;
-    if (!inMap(sx + nx * (L + 35), sz + nz * (L + 35)) || !inMap(mx - nx * roof, mz - nz * roof)) continue;
+    if (rampOnRoad(sx, sz, nx, nz, L, W)) continue;
+    if (!inMap(sx + nx * (L + 28), sz + nz * (L + 28)) || !inMap(mx - nx * roof, mz - nz * roof)) continue;
     roofCands.push({ x: cx, z: cz, yaw: Math.atan2(-nz, -nx), len: L, h: b.h + 0.15, w: W, kind: 'roof', score: roof + len / 2 });
   }
 }
 roofCands.sort((a, b) => b.score - a.score);
+console.log(`roof ramps: ${roofCands.length} candidates`);
 for (const c of roofCands) {
-  if (ramps.filter((r) => r.kind === 'roof').length >= 8) break;
-  if (!far(c.x, c.z, 140)) continue;
+  if (ramps.filter((r) => r.kind === 'roof').length >= 14) break;
+  if (!far(c.x, c.z, 35)) continue;
   const { score: _s, ...r } = c;
   ramps.push(r);
 }
+// ---- loops: open, flat ground with a long free run-up into the loop and room to come out.
+const loops: Loop[] = [];
+const LR = 7, LD = 8.5;
+const loopOk = (l: Loop) => {
+  const secs = loopSections(l);
+  // The loop and its straights: no buildings, trees, water or roads under them.
+  for (const { p, side } of secs) {
+    if (p[1] > 6) continue;
+    for (let a = -LOOP_W / 2 - 1; a <= LOOP_W / 2 + 1; a += 1) {
+      const x = p[0] + side[0] * a, z = p[2] + side[2] * a;
+      if (!inMap(x, z) || at(solid, x, z) || at(water, x, z) || grid.edgeDistance(x, z) < 1.5) return false;
+    }
+  }
+  const e = loopEntry(l);
+  // 50 m run-up (roads are fine here) and 25 m beyond the exit.
+  if (!free(e.x - e.dirX, e.z - e.dirZ, -e.dirX, -e.dirZ, 50, LOOP_W, solid) || !free(e.x, e.z, -e.dirX, -e.dirZ, 50, LOOP_W, water)) return false;
+  const end = secs[secs.length - 1].p;
+  if (!free(end[0], end[2], e.dirX, e.dirZ, 25, LOOP_W, solid) || !free(end[0], end[2], e.dirX, e.dirZ, 25, LOOP_W, water)) return false;
+  return inMap(e.x - e.dirX * 50, e.z - e.dirZ * 50) && inMap(end[0] + e.dirX * 25, end[2] + e.dirZ * 25);
+};
+for (let z = -H + 60; z < H - 60 && loops.length < 4; z += 10)
+  for (let x = -H + 60; x < H - 60 && loops.length < 4; x += 10) {
+    if (at(solid, x, z) || at(water, x, z)) continue;
+    if (!far(x, z, 120) || loops.some((l) => Math.hypot(l.x - x, l.z - z) < 300)) continue;
+    for (let k = 0; k < 12; k++) {
+      const l = { x, z, yaw: (k / 12) * Math.PI * 2, r: LR, d: LD };
+      if (loopOk(l)) { loops.push(l); break; }
+    }
+  }
+for (const l of loops) for (const k of ['x', 'z', 'yaw'] as const) l[k] = +l[k].toFixed(2);
+(map as MapData).loops = loops;
+
+// Final check with everything in place: a ramp placed later may stand in a kicker's way.
+({ world } = await buildWorld({ ...loadMapData(), ramps, loops }));
+rampBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+for (const r of [...ramps]) {
+  if (r.kind !== 'kick' || landsOnRoof(r, 'compact')) continue;
+  console.log('dropped kicker', r.x.toFixed(0), r.z.toFixed(0), '(blocked by another ramp)');
+  ramps.splice(ramps.indexOf(r), 1);
+}
+console.log(`${loops.length} loops`);
+for (const l of loops) console.log('loop', l.x, l.z, ((l.yaw * 180) / Math.PI).toFixed(0));
+
 for (const r of ramps) for (const k of ['x', 'z', 'yaw', 'len', 'h'] as const) r[k] = +r[k].toFixed(2);
 (map as MapData & { ramps: Ramp[] }).ramps = ramps;
-console.log(`${ramps.filter((r) => r.kind === 'water').length} water ramps, ${ramps.filter((r) => r.kind === 'roof').length} roof ramps`);
+console.log(`${ramps.filter((r) => r.kind === 'water').length} water ramps, ${ramps.filter((r) => r.kind === 'roof').length} roof ramps, ${ramps.filter((r) => r.kind === 'kick').length} kickers`);
 for (const r of ramps) console.log(r.kind, r.x, r.z, ((r.yaw * 180) / Math.PI).toFixed(0), r.h);
 // Don't save the in-memory lod3d typed arrays.
 delete (map as Partial<MapData>).lod3d;
