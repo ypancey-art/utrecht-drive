@@ -10,11 +10,14 @@ export interface Progress {
   owned: string[];
   upgrades: Record<string, CarUpgrades>;
   missionsDone: string[];
+  points: number; // ⚡ stunt points, earned by driving (speed, jumps, loops)
+  topSpeed: number; // km/h record
+  built: string[]; // things built in the city (ramp groups, loops, tracks)
 }
 
 const KEY = 'utrecht-drive-progress';
 const KNOWN_CARS = ['compact', 'hatch', 'sedan', 'wagon', 'suv', 'offroad', 'pickup', 'minivan', 'coupe', 'sport', 'gt', 'rally', 'truck', 'limo', 'hyper'];
-const fresh = (): Progress => ({ grade: null, coins: 0, carId: 'compact', owned: ['compact'], upgrades: {}, missionsDone: [] });
+const fresh = (): Progress => ({ grade: null, coins: 0, carId: 'compact', owned: ['compact'], upgrades: {}, missionsDone: [], points: 0, topSpeed: 0, built: [] });
 
 /** Saved in this browser only (profiles come later). */
 export function loadProgress(): Progress {

@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { ShapeUtils, Vector2 } from 'three';
-import type { MapData, Loop } from './mapData';
-import { loopGeometry } from './loops';
+import type { MapData, Loop, Track } from './mapData';
+import { loopGeometry, stripGeometry, trackSections, trackPosts, LOOP_W } from './loops';
 import type { Tree } from './scenery';
 import { RAIL_H, RAIL_DECK, type Dyke } from './railway';
 import type { Item } from './playgrounds';
@@ -43,16 +43,32 @@ export function buildMapPhysics(
     }
     return false;
   };
+  // Hot Wheels tracks that drive through a building: a hole in the wall where they go in and out.
+  const holes = trackHoles(map.tracks ?? []);
   const verts: number[] = [];
   const idx: number[] = [];
+  const quad = (ax: number, az: number, bx: number, bz: number, y0: number, y1: number) => {
+    if (y1 - y0 < 0.01) return;
+    const base = verts.length / 3;
+    verts.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
   for (const { pts, h } of map.buildings) {
     for (let i = 0; i < pts.length - 1; i++) {
       const [ax, az] = pts[i];
       const [bx, bz] = pts[i + 1];
       const y0 = h > PASSAGE + 1 && crossesStreet(ax, az, bx, bz) ? PASSAGE : 0;
-      const base = verts.length / 3;
-      verts.push(ax, y0, az, bx, y0, bz, bx, h, bz, ax, h, az);
-      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      const hole = holes.length ? wallHole(holes, ax, az, bx, bz) : null;
+      if (!hole || hole.y1 > h) {
+        quad(ax, az, bx, bz, y0, h);
+        continue;
+      }
+      // Below and above the hole, and the wall beside it.
+      quad(ax, az, bx, bz, y0, hole.y0);
+      quad(ax, az, bx, bz, hole.y1, h);
+      const ex = bx - ax, ez = bz - az;
+      if (hole.t0 > 0) quad(ax, az, ax + ex * hole.t0, az + ez * hole.t0, hole.y0, hole.y1);
+      if (hole.t1 < 1) quad(ax + ex * hole.t1, az + ez * hole.t1, bx, bz, hole.y0, hole.y1);
     }
   }
   world.createCollider(
@@ -189,5 +205,50 @@ export function addLoopPhysics(world: RAPIER.World, loops: Loop[]): Set<number> 
     for (const I of [road, walls])
       handles.add(world.createCollider(RAPIER.ColliderDesc.trimesh(P, new Uint32Array(I), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES).setFriction(0).setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min), body).handle);
   }
+  return handles;
+}
+
+/** Track centre-line segments (x, y, z at both ends) of path pieces, for cutting holes in walls. */
+function trackHoles(tracks: Track[]) {
+  const segs: number[][] = [];
+  for (const t of tracks)
+    for (const part of t.parts)
+      if (part.kind === 'path')
+        for (let i = 0; i < part.pts.length - 1; i++) segs.push([...part.pts[i], ...part.pts[i + 1]]);
+  return segs;
+}
+
+/** Where a track crosses the wall from a to b: the part of the wall to leave open, or null. */
+function wallHole(segs: number[][], ax: number, az: number, bx: number, bz: number) {
+  const ex = bx - ax, ez = bz - az, el = Math.hypot(ex, ez);
+  if (el < 0.01) return null;
+  for (const [px, py, pz, qx, qy, qz] of segs) {
+    if (Math.max(px, qx) < Math.min(ax, bx) - 1 || Math.min(px, qx) > Math.max(ax, bx) + 1) continue;
+    if (Math.max(pz, qz) < Math.min(az, bz) - 1 || Math.min(pz, qz) > Math.max(az, bz) + 1) continue;
+    const rx = qx - px, rz = qz - pz, den = ex * rz - ez * rx;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((px - ax) * rz - (pz - az) * rx) / den, u = ((px - ax) * ez - (pz - az) * ex) / den;
+    if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+    const y = py + (qy - py) * u;
+    // Half the opening along the wall: half the track plus a margin, wider when crossing at an angle.
+    const sin = Math.abs(den) / (el * Math.hypot(rx, rz));
+    const half = (LOOP_W / 2 + 1.2) / Math.max(0.3, sin) / el;
+    return { t0: Math.max(0, t - half), t1: Math.min(1, t + half), y0: Math.max(0, y - 0.6), y1: y + 4.2 };
+  }
+  return null;
+}
+
+/** Tracks: one frictionless trimesh per piece, like the loops. Returns the collider handles. */
+export function addTrackPhysics(world: RAPIER.World, tracks: Track[], postOk: (x: number, z: number) => boolean = () => true): Set<number> {
+  const handles = new Set<number>();
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  for (const t of tracks) for (const p of trackPosts(t, postOk)) world.createCollider(RAPIER.ColliderDesc.cylinder(p.h / 2, 0.25).setTranslation(p.x, p.h / 2, p.z), body);
+  for (const t of tracks)
+    for (const secs of trackSections(t)) {
+      const { pos, road, walls } = stripGeometry(secs);
+      const P = new Float32Array(pos);
+      for (const I of [road, walls])
+        handles.add(world.createCollider(RAPIER.ColliderDesc.trimesh(P, new Uint32Array(I), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES).setFriction(0).setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min), body).handle);
+    }
   return handles;
 }

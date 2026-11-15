@@ -95,8 +95,9 @@ for (let z = -H + 40; z < H - 40; z += 4)
   }
 cands.sort((a, b) => b.score - a.score);
 for (const c of cands) {
-  if (ramps.filter((r) => r.kind === 'water').length >= 10) break;
-  if (!far(c.x, c.z, 140)) continue;
+  const nWater = ramps.filter((r) => r.kind === 'water').length;
+  if (nWater >= 20) break;
+  if (!far(c.x, c.z, nWater < 10 ? 140 : 80)) continue; // the first 10 are spread out; extras (to build) fill in
   const { score: _s, ...r } = c;
   ramps.push(r);
 }
@@ -210,7 +211,7 @@ for (const b of map.buildings) {
 roofCands.sort((a, b) => b.score - a.score);
 console.log(`roof ramps: ${roofCands.length} candidates`);
 for (const c of roofCands) {
-  if (ramps.filter((r) => r.kind === 'roof').length >= 14) break;
+  if (ramps.filter((r) => r.kind === 'roof').length >= 18) break;
   if (!far(c.x, c.z, 35)) continue;
   const { score: _s, ...r } = c;
   ramps.push(r);
@@ -235,15 +236,17 @@ const loopOk = (l: Loop) => {
   if (!free(end[0], end[2], e.dirX, e.dirZ, 25, LOOP_W, solid) || !free(end[0], end[2], e.dirX, e.dirZ, 25, LOOP_W, water)) return false;
   return inMap(e.x - e.dirX * 50, e.z - e.dirZ * 50) && inMap(end[0] + e.dirX * 25, end[2] + e.dirZ * 25);
 };
-for (let z = -H + 60; z < H - 60 && loops.length < 4; z += 10)
-  for (let x = -H + 60; x < H - 60 && loops.length < 4; x += 10) {
+for (let z = -H + 60; z < H - 60 && loops.length < 8; z += 10)
+  for (let x = -H + 60; x < H - 60 && loops.length < 8; x += 10) {
     if (at(solid, x, z) || at(water, x, z)) continue;
-    if (!far(x, z, 120) || loops.some((l) => Math.hypot(l.x - x, l.z - z) < 300)) continue;
+    if (!far(x, z, 120) || loops.some((l) => Math.hypot(l.x - x, l.z - z) < 220)) continue;
     for (let k = 0; k < 12; k++) {
       const l = { x, z, yaw: (k / 12) * Math.PI * 2, r: LR, d: LD };
       if (loopOk(l)) { loops.push(l); break; }
     }
   }
+// The first loops are there from the start; the others can be built in the game (one each).
+loops.forEach((l, i) => { if (i >= 4) l.build = `loop${i + 1}`; });
 for (const l of loops) for (const k of ['x', 'z', 'yaw'] as const) l[k] = +l[k].toFixed(2);
 (map as MapData).loops = loops;
 
@@ -258,6 +261,17 @@ for (const r of [...ramps]) {
 console.log(`${loops.length} loops`);
 for (const l of loops) console.log('loop', l.x, l.z, ((l.yaw * 180) / Math.PI).toFixed(0));
 
+// Extra ramps can be built in the game, one group per quarter of the map: the first 10 water
+// ramps, the first 8 roof ramps and all kickers are there from the start.
+{
+  const quarter = (r: Ramp) => `ramps${r.z < 0 ? 'N' : 'S'}${r.x < 0 ? 'W' : 'E'}`;
+  let w = 0, rf = 0;
+  for (const r of ramps) {
+    if (r.kind === 'water' && w++ >= 10) r.build = quarter(r);
+    if (r.kind === 'roof' && rf++ >= 8) r.build = quarter(r);
+  }
+  console.log('to build:', JSON.stringify(Object.entries(ramps.reduce((m, r) => (r.build ? { ...m, [r.build]: (m[r.build] ?? 0) + 1 } : m), {} as Record<string, number>))));
+}
 for (const r of ramps) for (const k of ['x', 'z', 'yaw', 'len', 'h'] as const) r[k] = +r[k].toFixed(2);
 (map as MapData & { ramps: Ramp[] }).ramps = ramps;
 console.log(`${ramps.filter((r) => r.kind === 'water').length} water ramps, ${ramps.filter((r) => r.kind === 'roof').length} roof ramps, ${ramps.filter((r) => r.kind === 'kick').length} kickers`);

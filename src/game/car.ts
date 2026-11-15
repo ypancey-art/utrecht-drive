@@ -52,7 +52,7 @@ export class Car {
       { x: -wx, z: wz, front: false },
     ];
     this.body = world.createRigidBody(
-      RAPIER.RigidBodyDesc.dynamic().setLinearDamping(0.05).setAngularDamping(0.5).setCanSleep(false),
+      RAPIER.RigidBodyDesc.dynamic().setLinearDamping(0.05).setAngularDamping(0.5).setCanSleep(false).setCcdEnabled(true), // CCD: no tunnelling through thin tracks at high speed
     );
     const volume = 8 * HALF.x * HALF.y * HALF.z;
     this.collider = world.createCollider(

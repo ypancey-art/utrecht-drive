@@ -6,7 +6,7 @@ import { buildDyke } from '../src/game/railway';
 import { placeScenery } from '../src/game/scenery';
 import { WaterMap } from '../src/game/water';
 import { bridgeSegments } from '../src/art/mapMeshes';
-import { buildMapPhysics, addHedgePhysics, addRampPhysics, addLoopPhysics } from '../src/game/mapPhysics';
+import { buildMapPhysics, addHedgePhysics, addRampPhysics, addLoopPhysics, addTrackPhysics } from '../src/game/mapPhysics';
 import { rampPoints } from '../src/art/rampMeshes';
 
 export function loadMapData(): MapData {
@@ -33,6 +33,8 @@ export async function buildWorld(map: MapData = loadMapData()) {
   addHedgePhysics(world, map.hedges ?? []);
   addRampPhysics(world, (map.ramps ?? []).map(rampPoints));
   addLoopPhysics(world, map.loops ?? []);
+  // Everything that can be built is in the test world, so the tests cover it all.
+  addTrackPhysics(world, map.tracks ?? [], (x, z) => scenery.grid.edgeDistance(x, z) > 1.2);
   world.step();
   return { RAPIER, map, dyke, scenery, water, decks, world };
 }

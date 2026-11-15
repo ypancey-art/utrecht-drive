@@ -2,6 +2,7 @@
 // and deterministic (seeded), so every player sees the same Overvecht.
 import type { MapData, Pt } from './mapData';
 import { WaterMap } from './water';
+import { trackSections } from './loops';
 
 /** kind: 0 round, 1 narrow, 2 conifer, 3 willow (wide, weeping). h = height, crown = crown diameter (m). */
 export interface Tree { x: number; z: number; h: number; crown: number; kind: 0 | 1 | 2 | 3 }
@@ -166,10 +167,28 @@ export function placeScenery(map: MapData) {
     }
     return best;
   };
+  // Hot Wheels tracks: points along them (x, y, z) in 10 m buckets, to keep trees and lamps away.
+  const trackPts = new Map<number, number[][]>();
+  for (const t of map.tracks ?? [])
+    for (const secs of trackSections(t))
+      for (const { p } of secs) {
+        const k = Math.floor(p[0] / 10) * 4096 + Math.floor(p[2] / 10);
+        (trackPts.get(k) ?? trackPts.set(k, []).get(k)!).push(p);
+      }
+  /** Is a thing of radius r and height h at (x, z) in the way of a track? */
+  const onTrack = (x: number, z: number, r: number, h: number) => {
+    if (!trackPts.size) return false;
+    const cx = Math.floor(x / 10), cz = Math.floor(z / 10);
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++)
+        for (const p of trackPts.get((cx + dx) * 4096 + cz + dz) ?? []) if (p[1] < h + 1 && Math.hypot(p[0] - x, p[2] - z) < r + 4.5) return true;
+    return false;
+  };
   const trees: Tree[] = [];
   // No trees in water or inside buildings; crowns may not grow through walls.
   const add = (t: Tree) => {
     if (water.contains(t.x, t.z)) return;
+    if (onTrack(t.x, t.z, t.crown / 2, t.h)) return;
     const wall = walls.wallDistance(t.x, t.z);
     if (wall < 0.4) return;
     const rail = railDistance(t.x, t.z);
@@ -211,7 +230,7 @@ export function placeScenery(map: MapData) {
       for (; next < walked + len; next += 35) {
         const d = next - walked;
         const x = ax + ux * d + nx * off, z = az + uz * d + nz * off;
-        if (grid.edgeDistance(x, z) > 0.4) lamps.push({ x, z, dirX: -nx, dirZ: -nz });
+        if (grid.edgeDistance(x, z) > 0.4 && !onTrack(x, z, 0.5, 7)) lamps.push({ x, z, dirX: -nx, dirZ: -nz });
       }
       walked += len;
     }

@@ -87,3 +87,17 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9ec9e8; fon
 .card p { white-space: pre-line; }
 
 .hud-btn { pointer-events: auto; border: 0; border-radius: 10px; background: rgba(20, 24, 32, 0.7); color: #fff; font-size: 18px; padding: 4px 10px; cursor: pointer; }
+
+/* --- ⚡ stunt points, speed record, city builder --- */
+.counters { display: flex; gap: 6px; }
+#points, #record { background: rgba(20, 24, 32, 0.7); border-radius: 10px; padding: 4px 10px; font-weight: 700; font-size: 18px; }
+#points { color: #7fd6ff; transition: transform 0.15s; }
+#points.bump { transform: scale(1.18); }
+#record { color: #fff; font-size: 15px; padding-top: 6px; }
+#stunt { color: #7fd6ff; font-weight: 800; font-size: 18px; text-shadow: 0 2px 6px rgba(0,0,0,0.6); opacity: 0; transform: translateY(6px); transition: opacity 0.2s, transform 0.2s; }
+#stunt.show { opacity: 1; transform: translateY(0); }
+.build-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; margin-bottom: 12px; }
+.build-row { display: flex; align-items: center; gap: 10px; background: #efece5; border-radius: 10px; padding: 8px 10px; }
+.build-icon { font-size: 22px; }
+.build-text { flex: 1; min-width: 0; }
+.build-name { font-weight: 700; }

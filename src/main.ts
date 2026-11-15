@@ -3,8 +3,10 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadMap, nearestRoad } from './game/mapData';
-import { buildMapPhysics, addHedgePhysics, addRampPhysics, addLoopPhysics } from './game/mapPhysics';
-import { buildLoops } from './art/loopMeshes';
+import { buildMapPhysics, addHedgePhysics, addRampPhysics, addLoopPhysics, addTrackPhysics } from './game/mapPhysics';
+import { buildLoops, buildTrack } from './art/loopMeshes';
+import { buildCatalogue, type BuildItem } from './game/builder';
+import { openBuilder } from './ui/builder';
 import { buildRamps, rampPoints } from './art/rampMeshes';
 import { Car } from './game/car';
 import { Input } from './game/input';
@@ -40,6 +42,9 @@ const streetEl = $('street');
 const hintEl = $('hint');
 const langBtn = $<HTMLButtonElement>('lang');
 const coinsEl = $('coins');
+const pointsEl = $('points');
+const recordEl = $('record');
+const stuntEl = $('stunt');
 const missionEl = $('mission');
 const missionTitleEl = $('mission-title');
 const missionTimerEl = $('mission-timer');
@@ -96,6 +101,8 @@ async function start() {
   const save = () => {
     saveProgress(progress);
     coinsEl.textContent = `🪙 ${progress.coins}`;
+    pointsEl.textContent = `⚡ ${progress.points}`;
+    recordEl.textContent = `🏁 ${progress.topSpeed}`;
   };
   save();
 
@@ -152,12 +159,14 @@ async function start() {
   const play = placePlaygrounds(map);
   // Everything that never moves, split into 200 m tiles so only what is in view gets drawn.
   const statics = new THREE.Group();
+  // Ramps and loops with a `build` id only appear once built in the city builder.
+  const freeRamps = (map.ramps ?? []).filter((r) => !r.build), freeLoops = (map.loops ?? []).filter((l) => !l.build);
   statics.add(buildPlaygrounds(play.items, play.areas));
   const decks = bridgeSegments(map, water, scenery.grid); // once: used for the meshes and the physics
   statics.add(buildMapMeshes(map, scenery.grid, water, dyke, decks));
   mark('map meshes');
   statics.add(buildTrees(scenery.trees), buildLamps(scenery.lamps));
-  statics.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []), buildRamps(map.ramps ?? []), buildLoops(map.loops ?? []));
+  statics.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []), buildRamps(freeRamps), buildLoops(freeLoops));
   mark('trees + greenery');
   tileStatic(statics);
   mark('tiles');
@@ -171,8 +180,28 @@ async function start() {
   mark('bridges');
   buildMapPhysics(world, map, scenery.trees, decks, dyke, play);
   addHedgePhysics(world, map.hedges ?? []);
-  addRampPhysics(world, (map.ramps ?? []).map(rampPoints));
-  const loopColliders = addLoopPhysics(world, map.loops ?? []);
+  addRampPhysics(world, freeRamps.map(rampPoints));
+  const loopColliders = addLoopPhysics(world, freeLoops);
+  // Things built in the city builder: added to the scene and the physics (also later, when built).
+  const postOk = (x: number, z: number) => scenery.grid.edgeDistance(x, z) > 1.2;
+  const addBuilt = (id: string) => {
+    const ramps = (map.ramps ?? []).filter((r) => r.build === id), loops = (map.loops ?? []).filter((l) => l.build === id);
+    const tracks = (map.tracks ?? []).filter((t) => t.id === id);
+    if (ramps.length) {
+      scene.add(buildRamps(ramps));
+      addRampPhysics(world, ramps.map(rampPoints));
+    }
+    if (loops.length) {
+      scene.add(buildLoops(loops));
+      for (const h of addLoopPhysics(world, loops)) loopColliders.add(h);
+    }
+    for (const t of tracks) {
+      scene.add(buildTrack(t, map.buildings, postOk));
+      for (const h of addTrackPhysics(world, [t], postOk)) loopColliders.add(h);
+    }
+  };
+  for (const id of progress.built) addBuilt(id);
+  const catalogue = buildCatalogue(map);
   mark('physics');
   const graph = new RoadGraph(map);
 
@@ -265,8 +294,15 @@ async function start() {
         b.position.set(m.start[0], 0, m.start[1]);
         markers.add(b);
       }
+      if (guide) {
+        const b = beam('target', REACH_RADIUS);
+        b.position.set(guide.where[0], 0, guide.where[1]);
+        markers.add(b);
+      }
     }
   };
+  // Something just built (or chosen in the builder): the arrow shows the way there.
+  let guide: BuildItem | null = null;
   refreshMarkers();
 
   // --- Flows that open screens (driving pauses while a screen is open) ---
@@ -320,6 +356,7 @@ async function start() {
         { label: t('garage'), value: 'garage' },
         { label: t('changeGrade'), value: 'grade' },
         { label: t('earnCoins'), value: 'earn' },
+        { label: t('build'), value: 'build' },
         { label: t('startChase'), value: 'chase' },
       ]);
       if (choice === 'garage') {
@@ -327,6 +364,13 @@ async function start() {
           save();
           buildPlayer();
         });
+      } else if (choice === 'build') {
+        const go = await openBuilder(progress, catalogue, (it) => addBuilt(it.id));
+        save();
+        if (go) {
+          guide = go;
+          refreshMarkers();
+        }
       } else if (choice === 'earn' && progress.grade) {
         // Practise for coins: as many sums as you like. Harder grades pay a bit more, and every
         // 5 right in a row gives a bonus.
@@ -386,6 +430,21 @@ async function start() {
   let acc = 0;
   let last = performance.now();
   let flippedTime = 0;
+  const stunts = { air: 0, inverted: false, fast: 0, recordDirty: false, lastSave: 0 };
+  let stuntTimer = 0;
+  const stunt = (key: Parameters<typeof t>[0], pts: number) => {
+    progress.points += pts;
+    save();
+    sound.coin();
+    stuntEl.textContent = t(key, { p: pts });
+    stuntEl.classList.add('show');
+    pointsEl.classList.add('bump');
+    clearTimeout(stuntTimer);
+    stuntTimer = window.setTimeout(() => {
+      stuntEl.classList.remove('show');
+      pointsEl.classList.remove('bump');
+    }, 1400);
+  };
   let streetTimer = 0;
   let firstFrame = true;
   let crashLoud = 0, lastCrashSound = 0;
@@ -459,6 +518,45 @@ async function start() {
       if (flippedTime > 2) {
         spawn();
         flippedTime = 0;
+        stunts.inverted = false;
+      }
+
+      // Stunts earn ⚡ points: time in the air, loops (upside down on the wheels and back),
+      // landing high up, and keeping up a high speed.
+      if (!car.sinking) {
+        const q = car.body.rotation();
+        const upY = 1 - 2 * (q.x * q.x + q.z * q.z);
+        if (!car.grounded) stunts.air += dt;
+        else {
+          if (stunts.air > 0.8 && upY > 0.7) {
+            const pts = Math.min(30, Math.round(stunts.air * 5));
+            stunt(cp.y > 2.5 ? 'stuntRoof' : 'stuntAir', cp.y > 2.5 ? pts + 5 : pts);
+          }
+          stunts.air = 0;
+          if (upY < -0.5) stunts.inverted = true;
+          else if (upY > 0.9 && stunts.inverted) {
+            stunts.inverted = false;
+            stunt('stuntLoop', 25);
+          }
+        }
+        if (Math.abs(car.speed) > 25) {
+          stunts.fast += dt;
+          if (stunts.fast >= 4) {
+            stunts.fast = 0;
+            stunt('stuntSpeed', 3);
+          }
+        } else stunts.fast = Math.max(0, stunts.fast - dt);
+        const kmh = Math.round(Math.abs(car.speed) * 3.6);
+        if (kmh > progress.topSpeed) {
+          progress.topSpeed = kmh;
+          recordEl.textContent = `🏁 ${kmh}`;
+          stunts.recordDirty = true;
+        }
+        if (stunts.recordDirty && now - stunts.lastSave > 2000) {
+          stunts.recordDirty = false;
+          stunts.lastSave = now;
+          save();
+        }
       }
 
       traffic.update(dt, car, police.units.map((u) => u.car));
@@ -548,13 +646,19 @@ async function start() {
     meterEl.style.width = `${police.meter}%`;
     meterEl.style.background = police.meter >= STAR_LEVELS[0] ? '#ff3b30' : '#ffb340';
 
-    const tg = runner.target;
+    if (guide && !runner.active && Math.hypot(guide.where[0] - p.x, guide.where[1] - p.z) < 20) {
+      guide = null; // arrived
+      refreshMarkers();
+    }
+    const tg = runner.target ?? guide?.where ?? null;
     missionEl.classList.toggle('hidden', !runner.active);
     arrowEl.classList.toggle('hidden', !tg);
-    if (runner.active && tg) {
-      missionTitleEl.textContent = runner.active.def.title[getLang()];
-      missionTimerEl.textContent = fmtTime(runner.timeLeft);
-      missionTimerEl.classList.toggle('low', runner.timeLeft < 15);
+    if (tg) {
+      if (runner.active) {
+        missionTitleEl.textContent = runner.active.def.title[getLang()];
+        missionTimerEl.textContent = fmtTime(runner.timeLeft);
+        missionTimerEl.classList.toggle('low', runner.timeLeft < 15);
+      }
       // Arrow relative to the camera's view direction.
       const cf = camera.getWorldDirection(tmp);
       const len = Math.hypot(cf.x, cf.z) || 1;
@@ -621,7 +725,7 @@ async function start() {
   }
 
   // Handy for debugging in the browser console.
-  (window as unknown as { game: unknown }).game = { renderer, people, car: () => car, world, map, scene, camera, police, runner, progress, traffic };
+  (window as unknown as { game: unknown }).game = { renderer, people, car: () => car, world, map, scene, camera, police, runner, progress, traffic, addBuilt };
 }
 
 start().catch((err) => {
