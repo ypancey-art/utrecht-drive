@@ -13,6 +13,9 @@ import { placePlaygrounds } from './game/playgrounds';
 import { buildPlaygrounds } from './art/playgroundMeshes';
 import { RoadGraph } from './game/roadGraph';
 import { Police, STAR_LEVELS } from './game/police';
+import { sound } from './audio/sound';
+import { People } from './game/people';
+import { makePersonVisual } from './art/peopleMeshes';
 import { Traffic } from './game/traffic';
 import { buildMissions, MissionRunner, MISSION_SIZE, REACH_RADIUS } from './game/missions';
 import { CARS, POLICE, carById, upgradedStats, armourFactor } from './game/cars';
@@ -194,6 +197,19 @@ async function start() {
     return { sync: (c) => syncModel(m, c), dispose: () => scene.remove(m.body, ...m.wheels) };
   }, isTouch ? 8 : 14);
 
+  // --- Pedestrians and cyclists ---
+  const people = new People(
+    new RoadGraph(map, false, (r) => !r.tunnel && ['footway', 'pedestrian', 'path'].includes(r.kind)),
+    new RoadGraph(map, false, (r) => !r.tunnel && ['cycleway', 'residential', 'living_street'].includes(r.kind)),
+    (kind) => makePersonVisual(scene, kind),
+    isTouch ? 18 : 40,
+  );
+  people.onHit = (strength) => {
+    police.addCrash(30 * armourFactor(carById(progress.carId), upgradesFor(progress, progress.carId)));
+    sound.crash(0.3 + strength * 0.4);
+    toast(t('hitPerson'), 2.5);
+  };
+
   // --- Missions ---
   const runner = new MissionRunner(buildMissions(map));
   const markers = new THREE.Group();
@@ -278,6 +294,14 @@ async function start() {
       }
     });
   $('menu-btn').addEventListener('click', openMenu);
+  const musicBtn = $('music-btn'), sfxBtn = $('sfx-btn');
+  const soundIcons = () => {
+    musicBtn.style.opacity = sound.musicOn ? '1' : '0.45';
+    sfxBtn.textContent = sound.sfxOn ? '🔊' : '🔇';
+  };
+  musicBtn.addEventListener('click', () => (sound.toggleMusic(), soundIcons()));
+  sfxBtn.addEventListener('click', () => (sound.toggleSfx(), soundIcons()));
+  soundIcons();
 
   const input = new Input($('touch'));
   input.onReset = () => !isOpen() && spawn();
@@ -304,16 +328,19 @@ async function start() {
   let flippedTime = 0;
   let streetTimer = 0;
   let firstFrame = true;
+  let crashLoud = 0, lastCrashSound = 0;
   const STOP: Parameters<Car['update']>[0] = { throttle: 0, steer: 0, handbrake: true };
 
   function frame(now: number) {
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     const paused = isOpen();
+    let throttleNow = 0;
 
     if (!paused) {
       acc += dt;
       const controls = input.read();
+      throttleNow = controls.throttle;
       while (acc >= world.timestep) {
         if (car.sinking) car.updateSinking(world.timestep);
         else car.update(controls, world.timestep);
@@ -338,7 +365,13 @@ async function start() {
           points = Math.max(points, 0) + 22 * armour;
         }
         if (points > 2) police.addCrash(points);
+        if (points > 1.5) crashLoud = Math.max(crashLoud, points / 25);
       });
+      if (crashLoud > 0 && now - lastCrashSound > 250) {
+        sound.crash(crashLoud);
+        lastCrashSound = now;
+      }
+      crashLoud = 0;
       if (police.stars > starsBefore) toast(t(starsBefore ? 'policeMore' : 'policeComing'), 2.5);
 
       // Water: the car sinks, then comes back on the nearest road.
@@ -346,6 +379,7 @@ async function start() {
       if (!car.sinking) {
         if (cp.y < 2 && water.contains(cp.x, cp.z) && scenery.grid.edgeDistance(cp.x, cp.z) > 0.3) {
           car.startSinking();
+          sound.splash();
           toast(t('splash'), 3);
         }
       } else if (car.sinking > 3) {
@@ -360,6 +394,11 @@ async function start() {
       }
 
       traffic.update(dt, car, police.units.map((u) => u.car));
+      {
+        const q = car.body.rotation();
+        const hx = 1 - 2 * (q.y * q.y + q.z * q.z), hz = 2 * (q.x * q.z - q.w * q.y);
+        people.update(dt, cp.x, cp.z, car.sinking ? 0 : car.speed, Math.atan2(hz, hx));
+      }
 
       // Police: chase, escape or caught.
       const pr = police.update(dt, car);
@@ -380,6 +419,7 @@ async function start() {
       } else if (res === 'complete' && before) {
         const reward = MISSION_SIZE[before.def.size].reward;
         progress.coins += reward;
+        sound.coin();
         if (!progress.missionsDone.includes(before.def.id)) progress.missionsDone.push(before.def.id);
         save();
         toast(t('complete', { n: reward }), 3);
@@ -392,6 +432,18 @@ async function start() {
         const m = runner.atStart(cp.x, cp.z);
         if (m) askMission(m);
       }
+    }
+
+    // Sound: engine follows speed and throttle; the siren gets louder as police come closer.
+    sound.updateEngine(car.speed / car.stats.maxSpeed, throttleNow, !paused && !car.sinking);
+    {
+      const pp = car.body.translation();
+      let nearest = Infinity;
+      for (const u of police.units) {
+        const c = u.car.body.translation();
+        nearest = Math.min(nearest, Math.hypot(c.x - pp.x, c.z - pp.z));
+      }
+      sound.updateSiren(paused ? Infinity : nearest);
     }
 
     // Sync visuals.
@@ -455,6 +507,13 @@ async function start() {
   const qs = new URLSearchParams(location.search);
   const qGrade = qs.get('grade') as typeof progress.grade;
   if (qGrade) progress.grade = qGrade;
+  if (qs.has('people')) {
+    // ?people: a few people in front of the car (to check how they look).
+    const c = car.body.translation();
+    const q = car.body.rotation();
+    const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
+    for (let i = 0; i < 6; i++) people.placeAt(i % 2 ? 'cyclist' : 'walker', c.x + fx * (8 + i * 2) - fz * (i - 2.5) * 1.6, c.z + fz * (8 + i * 2) + fx * (i - 2.5) * 1.6, i * 1.1);
+  }
   if (qs.get('wanted')) police.addCrash(STAR_LEVELS[Math.min(2, Number(qs.get('wanted')) - 1)]);
   if (qs.get('garage')) {
     progress.owned = [...new Set([...progress.owned, qs.get('garage')!])];
@@ -475,7 +534,7 @@ async function start() {
   }
 
   // Handy for debugging in the browser console.
-  (window as unknown as { game: unknown }).game = { car: () => car, world, map, scene, camera, police, runner, progress, traffic };
+  (window as unknown as { game: unknown }).game = { people, car: () => car, world, map, scene, camera, police, runner, progress, traffic };
 }
 
 start().catch((err) => {

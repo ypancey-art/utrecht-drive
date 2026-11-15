@@ -114,7 +114,7 @@ export function openGarage(p: Progress, grade: Progress['grade'], onChange: () =
 
       const st = upgradedStats(spec, u);
       const stats = h('div', { class: 'stats' },
-        bar(t('statSpeed'), st.maxSpeed / 35),
+        bar(t('statSpeed'), st.maxSpeed / 52),
         bar(t('statHandling'), (st.grip * st.maxSteer) / 2.6),
         bar(t('statTough'), 0.4 / armourFactor(spec, u)),
       );

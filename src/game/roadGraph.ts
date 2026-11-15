@@ -1,6 +1,6 @@
 import type { MapData, Pt } from './mapData';
 
-/** Drivable street network: OSM ways that share a point are connected. Used for police routes. */
+/** Street (or path) network: OSM ways that share a point are connected. Used for police, traffic and people. */
 export class RoadGraph {
   pts: Pt[] = [];
   edges: number[][] = [];
@@ -9,7 +9,7 @@ export class RoadGraph {
   private cell = 30;
 
   /** directed: follow one-way streets (for normal traffic; the police ignore them). */
-  constructor(map: MapData, directed = false) {
+  constructor(map: MapData, directed = false, use: (r: MapData['roads'][number]) => boolean = (r) => r.drivable && !r.tunnel) {
     const id = (p: Pt) => {
       const k = `${p[0].toFixed(1)},${p[1].toFixed(1)}`;
       let i = this.index.get(k);
@@ -24,7 +24,7 @@ export class RoadGraph {
       return i;
     };
     for (const r of map.roads) {
-      if (!r.drivable || r.tunnel) continue;
+      if (!use(r)) continue;
       // Split long segments so routes have waypoints at least every 15 m.
       let prev = id(r.pts[0]);
       for (let k = 1; k < r.pts.length; k++) {

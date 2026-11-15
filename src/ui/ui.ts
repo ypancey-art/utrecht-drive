@@ -1,4 +1,5 @@
 // HTML screens drawn over the 3D view. They pause driving while open.
+import { sound } from '../audio/sound';
 import { t, getLang, setLang, gradeName, type Lang } from '../i18n';
 import { GRADES, type Grade } from '../game/progress';
 import { makeProblem, choices, formatAnswer } from '../game/mathProblems';
@@ -116,6 +117,8 @@ export function mathGate(count: number, grade: Grade, title = t('solveN', { n: c
       locked = true;
       const right = Math.abs(v - problem.answer) < 1e-6;
       feedback.textContent = right ? t('correct') : t('wrong');
+      if (right) sound.correct();
+      else sound.wrong();
       feedback.className = right ? 'feedback good' : 'feedback bad';
       setTimeout(() => {
         locked = false;

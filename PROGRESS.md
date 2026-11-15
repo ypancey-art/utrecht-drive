@@ -81,3 +81,14 @@ Known gaps / next steps:
 - Houses have flat roofs (no pitched roofs yet); car is still a simple box
 - Mobile touch controls need rework (user will test later)
 - Possible: Mapillary (CC BY-SA street photos, needs free API token) for façade colours
+
+## Session 2026-11-15 (afternoon)
+- [x] Railway dyke = one height grid (railway.ts): parallel tracks merged, openings + decks wherever a road/path crosses (Tiberdreef station tunnel opened). Test: scripts/cache/bridgetest.ts via `npx tsx` (not committed).
+- [x] Bridge railings never block a joining path/street
+- [x] Façade colours from Mapillary (scripts/fetch-facades.mjs, token in ~/.mapillary_token, NEVER commit it). 440 buildings; coverage is the limit
+- [x] Cars ~45% faster; Offroad + Pickup; police faster
+- [x] Accidents (hitting traffic or people) fill the meter fast; caught = mandatory fine (sums for the rest)
+- [x] Sound + original music (src/audio/sound.ts, Web Audio, no files). Copyrighted songs (Billie Jean, Dance Monkey) NOT included, also not as MIDI
+- [x] Pedestrians + cyclists on real paths (game/people.ts, art/peopleMeshes.ts); test: `?people`
+- [ ] Mobile controls (deferred by user)
+- [ ] Cycle tunnels under the dreven (not under the railway) still hidden
