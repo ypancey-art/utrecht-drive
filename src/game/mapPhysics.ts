@@ -50,15 +50,16 @@ export function buildMapPhysics(
     for (const side of [-1, 1]) {
       if (!b.rails[side < 0 ? 1 : 0]) continue;
       const cx = (b.ax + b.bx) / 2 - uz * side * (b.width / 2), cz = (b.az + b.bz) / 2 + ux * side * (b.width / 2);
-      world.createCollider(RAPIER.ColliderDesc.cuboid(len / 2 + 0.3, 0.6, 0.1).setTranslation(cx, 0.6, cz).setRotation(rot), fixed);
+      world.createCollider(RAPIER.ColliderDesc.cuboid(len / 2 + 0.05, 0.6, 0.1).setTranslation(cx, 0.6, cz).setRotation(rot), fixed);
     }
   }
 
   // Railway dyke (sloped sides + top) and the railway bridges over the streets.
   if (dyke) {
-    const tri = [...dyke.slopes, ...dyke.tops, ...dyke.walls];
-    if (tri.length) {
-      world.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(tri), Uint32Array.from(tri.map((_, i) => i).filter((i) => i < tri.length / 3))).setFriction(0.8), fixed);
+    if (dyke.idx.length) world.createCollider(RAPIER.ColliderDesc.trimesh(dyke.pos, dyke.idx).setFriction(0.8), fixed);
+    if (dyke.walls.length) {
+      const w = new Float32Array(dyke.walls);
+      world.createCollider(RAPIER.ColliderDesc.trimesh(w, Uint32Array.from({ length: w.length / 3 }, (_, i) => i)), fixed);
     }
     for (const d of dyke.decks) {
       const len = Math.hypot(d.bx - d.ax, d.bz - d.az);

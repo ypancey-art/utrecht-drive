@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "fetch-map": "node scripts/fetch-osm.mjs",
-    "fetch-3d": "node scripts/fetch-3d.mjs"
+    "fetch-3d": "node scripts/fetch-3d.mjs",
+    "fetch-facades": "node scripts/fetch-facades.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

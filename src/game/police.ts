@@ -58,7 +58,7 @@ export class Police {
   /** Called every frame. Returns 'caught', 'escaped' or null. */
   update(dt: number, player: Car): 'caught' | 'escaped' | null {
     this.time += dt;
-    this.meter = Math.max(0, this.meter - dt * 3);
+    this.meter = Math.max(0, this.meter - dt * 1.2);
     if (this.stars === 0) return null;
 
     const p = player.body.translation();

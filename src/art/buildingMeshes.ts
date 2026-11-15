@@ -147,8 +147,32 @@ function footprintArea(pts: Pt[]) {
   return Math.abs(a / 2);
 }
 
+const hslOf = (hex: number) => {
+  const o = { h: 0, s: 0, l: 0 };
+  new THREE.Color().setHex(hex).getHSL(o);
+  return o;
+};
+/** For gallery flats with a street photo: pick the panel colour closest to what the photo shows. */
+function flatFromPhoto(b: Building): 'flat' | 'flatBlue' | 'flatWarm' | null {
+  if (!b.facade) return null;
+  for (const c of [b.facade[1], b.facade[0]]) {
+    const { h, s, l } = hslOf(c);
+    if (s < 0.12 || l < 0.12 || l > 0.85) continue;
+    if (h > 0.5 && h < 0.72) return 'flatBlue';
+    if (h > 0.05 && h < 0.15) return 'flatWarm';
+    if (h <= 0.05 || h > 0.9) return 'flat';
+  }
+  return null;
+}
+
 function styleFor(b: Building): keyof typeof STYLES {
   if (b.church) return b.church;
+  const named = styleByYear(b);
+  if (named.startsWith('flat')) return flatFromPhoto(b) ?? named;
+  return named;
+}
+
+function styleByYear(b: Building): keyof typeof STYLES {
   const year = b.year ?? 0;
   const floors = b.floors || Math.round(b.h / 3);
   if (!year) return b.h > 12 ? 'flatBlue' : 'house60';
@@ -246,6 +270,11 @@ export function buildBuildings(list: Building[], lod3d?: { pos: Int16Array; idx:
     const pitched = !!(b.eave && b.ridge);
     const wallH = pitched ? b.eave! : b.h;
     wc.setHex(style.walls[idx % style.walls.length]);
+    if (b.facade && !styleName.startsWith('flat') && styleName !== 'panel') {
+      // Real wall colour from a street photo. Photos are often in shade: lift the brightness.
+      const { h, s, l } = hslOf(b.facade[0]);
+      wc.setHSL(h, Math.min(0.55, s * 1.15), Math.max(0.25, Math.min(0.88, l * 1.3 + 0.06)));
+    }
     rc.setHex(pitched ? style.roofs[idx % style.roofs.length] : [0x6f6f72, 0x7d7a74, 0x5d6066][idx % 3]);
     if (b.roofColor !== undefined) {
       // Real roof colour from the aerial photo. Aerial photos look hazy, so make it

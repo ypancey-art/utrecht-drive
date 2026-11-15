@@ -109,7 +109,7 @@ export function mathGate(count: number, grade: Grade, title = t('solveN', { n: c
       progress.replaceChildren(...Array.from({ length: count }, (_, i) => h('span', { class: i < solved ? 'dot on' : 'dot' })));
       question.textContent = problem.q;
       hint.textContent = wrongStreak >= 2 ? `${t('hint')}: ${problem.hint}` : '';
-      answers.replaceChildren(...choices(problem).map((v, i) => button(`${i + 1}. ${formatAnswer(v, problem, getLang())}`, () => answer(v))));
+      answers.replaceChildren(...choices(problem).map((v) => button(formatAnswer(v, problem, getLang()), () => answer(v))));
     }
     function answer(v: number) {
       if (locked) return;

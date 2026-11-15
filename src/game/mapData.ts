@@ -12,6 +12,7 @@ export interface Building {
   color?: string;
   roof?: string;
   roofColor?: number; // measured from the aerial photo
+  facade?: [number, number, number]; // wall colour, accent colour, accent share (Mapillary street photos)
   church?: 'church' | 'mosque';
   lod?: [number, number, number, number, number]; // 3D shape: vertex start, count, index start, wall indices, roof indices
   pts: Pt[];

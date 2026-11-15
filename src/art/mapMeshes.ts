@@ -123,8 +123,20 @@ function railways(rails: { pts: Pt[] }[], dyke: Dyke): THREE.Group {
     m.castShadow = m.receiveShadow = true;
     group.add(m);
   };
-  mesh(dyke.slopes, palette.dyke);
-  mesh(dyke.tops, palette.ballast);
+  // Embankment: grass slopes, gravel on top (vertex colours from the height grid).
+  if (dyke.idx.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(dyke.pos, 3));
+    const grass = new THREE.Color(palette.dyke), gravel = new THREE.Color(palette.ballast);
+    const col = new Float32Array(dyke.pos.length);
+    dyke.top.forEach((t, i) => col.set(t ? [gravel.r, gravel.g, gravel.b] : [grass.r, grass.g, grass.b], i * 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setIndex(new THREE.BufferAttribute(dyke.idx, 1));
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+  }
   mesh(dyke.walls, palette.bridgeSide);
   // Railway bridges: concrete deck with low parapets.
   const deckPos: number[] = [];
@@ -240,10 +252,9 @@ export function bridgeSegments(map: MapData, water: WaterMap, grid: RoadGrid) {
           // Railings only on real bridges (paths: only when tagged), never standing on another road.
           const len = Math.hypot(x1 - x0, z1 - z0) || 1, nx = (-(z1 - z0) / len) * (width / 2), nz = ((x1 - x0) / len) * (width / 2);
           const wantRails = !culvert && (r.drivable || !!r.bridge);
-          const rails: [boolean, boolean] = [
-            wantRails && grid.edgeDistance(mx + nx, mz + nz) > -0.5,
-            wantRails && grid.edgeDistance(mx - nx, mz - nz) > -0.5,
-          ];
+          // Check along the whole railing piece, so it never blocks a path or street joining the bridge.
+          const free = (s: number) => [0, 0.5, 1].every((t) => grid.edgeDistance(x0 + (x1 - x0) * t + s * nx, z0 + (z1 - z0) * t + s * nz) > -0.3);
+          const rails: [boolean, boolean] = [wantRails && free(1), wantRails && free(-1)];
           segs.push({ ax: x0, az: z0, bx: x1, bz: z1, width, culvert, rails, drivable: r.drivable });
         }
       }

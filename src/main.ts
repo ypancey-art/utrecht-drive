@@ -119,9 +119,9 @@ async function start() {
   u.sunPosition.value.copy(SUN_DIR);
   scene.add(sky);
 
+  const dyke = buildDyke(map); // first: opens the road tunnels under the railway
   const scenery = placeScenery(map);
   const water = new WaterMap(map);
-  const dyke = buildDyke(map);
   const play = placePlaygrounds(map);
   scene.add(buildPlaygrounds(play.items, play.areas));
   scene.add(buildMapMeshes(map, scenery.grid, water, dyke), buildTrees(scenery.trees), buildLamps(scenery.lamps));
@@ -187,6 +187,7 @@ async function start() {
   police.inWater = (x, z) => water.contains(x, z) && scenery.grid.edgeDistance(x, z) > 0.3;
 
   // --- Traffic ---
+  const lastHit = new Map<number, number>(); // traffic collider -> time of the last accident
   const traffic = new Traffic(world, new RoadGraph(map, true), CARS, (spec, color) => {
     const m = buildCarModel(spec, color);
     scene.add(m.body, ...m.wheels);
@@ -242,18 +243,17 @@ async function start() {
 
   const caught = () =>
     flow(async () => {
+      // Caught: always a fine. Not enough coins? Pay what you have and work off the rest with sums.
       const fine = police.stars * 20;
-      const bail = 2 + police.stars;
-      for (;;) {
-        const choice = await dialog(t('caughtTitle'), t('caughtBody'), [
-          { label: t('payFine', { n: fine }), value: 'pay', disabled: progress.coins < fine },
-          { label: t('solveBail', { n: bail }), value: 'bail', primary: true },
-        ]);
-        if (choice === 'pay') {
-          progress.coins -= fine;
-          break;
-        }
-        if (progress.grade && (await mathGate(bail, progress.grade))) break;
+      if (progress.coins >= fine) {
+        await dialog(t('caughtTitle'), t('caughtBody', { n: fine }), [{ label: t('payFine', { n: fine }), value: 'pay', primary: true }]);
+        progress.coins -= fine;
+      } else {
+        const have = progress.coins;
+        const bail = 2 + police.stars;
+        await dialog(t('caughtTitle'), t('caughtBody', { n: fine }) + '\n\n' + t('fineShort', { have, n: bail }), [{ label: t('solveBail', { n: bail }), value: 'bail', primary: true }]);
+        progress.coins = 0;
+        while (progress.grade && !(await mathGate(bail, progress.grade))) { /* try again */ }
       }
       save();
       police.clear();
@@ -324,14 +324,22 @@ async function start() {
       }
 
       // Crashes fill the crash meter (not bumps from police cars).
+      const starsBefore = police.stars;
       const armour = armourFactor(carById(progress.carId), upgradesFor(progress, progress.carId));
       events.drainContactForceEvents((e) => {
         const h1 = e.collider1(), h2 = e.collider2();
         if (h1 !== car.collider.handle && h2 !== car.collider.handle) return;
         if (police.isPoliceCollider(h1) || police.isPoliceCollider(h2) || car.sinking) return;
-        const points = Math.min(30, e.totalForceMagnitude() / (car.stats.mass * 30)) * armour;
+        let points = Math.min(30, e.totalForceMagnitude() / (car.stats.mass * 30)) * armour;
+        // Hitting another road user is an accident: it counts much more (once per car per 2 s).
+        const other = h1 === car.collider.handle ? h2 : h1;
+        if (traffic.isTrafficCollider(other) && performance.now() - (lastHit.get(other) ?? -1e9) > 2000) {
+          lastHit.set(other, performance.now());
+          points = Math.max(points, 0) + 22 * armour;
+        }
         if (points > 2) police.addCrash(points);
       });
+      if (police.stars > starsBefore) toast(t(starsBefore ? 'policeMore' : 'policeComing'), 2.5);
 
       // Water: the car sinks, then comes back on the nearest road.
       const cp = car.body.translation();
