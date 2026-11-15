@@ -1,4 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat';
+import { ShapeUtils, Vector2 } from 'three';
 import type { MapData } from './mapData';
 import type { Tree } from './scenery';
 import { RAIL_H, RAIL_DECK, type Dyke } from './railway';
@@ -33,6 +34,29 @@ export function buildMapPhysics(
     RAPIER.ColliderDesc.trimesh(new Float32Array(verts), new Uint32Array(idx)).setFriction(0.3),
     fixed,
   );
+
+  // Roofs, so a car that jumps up there can drive on them: the real 3D roof shape where we
+  // have it, otherwise a flat roof at the building height.
+  const rv: number[] = [], ri: number[] = [];
+  const lod = map.lod3d;
+  for (const b of map.buildings) {
+    if (b.lod && lod) {
+      const [v0, , i0, nWall, nRoof] = b.lod;
+      for (let t = nWall; t < nWall + nRoof; t++) {
+        const k = (v0 + lod.idx[i0 + t]) * 3;
+        ri.push(rv.length / 3);
+        rv.push(lod.pos[k] / 10, lod.pos[k + 1] / 10, lod.pos[k + 2] / 10);
+      }
+      continue;
+    }
+    const ring = b.pts[0][0] === b.pts[b.pts.length - 1][0] && b.pts[0][1] === b.pts[b.pts.length - 1][1] ? b.pts.slice(0, -1) : b.pts;
+    if (ring.length < 3) continue;
+    const y = b.eave ?? b.h;
+    const base = rv.length / 3;
+    for (const [x, z] of ring) rv.push(x, y, z);
+    for (const tri of ShapeUtils.triangulateShape(ring.map(([x, z]) => new Vector2(x, z)), [])) ri.push(base + tri[0], base + tri[1], base + tri[2]);
+  }
+  if (ri.length) world.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(rv), new Uint32Array(ri)).setFriction(0.9), fixed);
 
   // Tree trunks.
   for (const t of trees) {
@@ -117,4 +141,13 @@ export function addHedgePhysics(world: RAPIER.World, hedges: { pts: [number, num
         body,
       );
     }
+}
+
+/** Jump ramps: one convex wedge each (corner points in world space). */
+export function addRampPhysics(world: RAPIER.World, wedges: number[][][]) {
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  for (const pts of wedges) {
+    const desc = RAPIER.ColliderDesc.convexHull(new Float32Array(pts.flat()));
+    if (desc) world.createCollider(desc.setFriction(1), body);
+  }
 }

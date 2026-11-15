@@ -19,6 +19,8 @@ export interface Building {
   lod?: [number, number, number, number, number]; // 3D shape: vertex start, count, index start, wall indices, roof indices
   pts: Pt[];
 }
+/** A jump ramp: centre, direction of travel up the ramp (yaw, radians, 0 = +x), size. */
+export interface Ramp { x: number; z: number; yaw: number; len: number; h: number; w: number; kind: 'water' | 'roof' }
 export interface CityTree { p: Pt; genus: string; species: string; year: number }
 export interface MapData {
   center: { lat: number; lon: number };
@@ -30,6 +32,7 @@ export interface MapData {
   playgrounds: { name: string; water?: boolean; pts: Pt[] }[];
   hedges?: { pts: Pt[]; h: number }[]; // OSM barrier=hedge
   shrubs?: { pts: Pt[]; flowers?: boolean }[]; // OSM shrubbery / flower beds
+  ramps?: Ramp[]; // jump ramps (scripts/place-ramps.ts)
   green: { pts: Pt[] }[];
   woods: { pts: Pt[] }[];
   trees: Pt[];

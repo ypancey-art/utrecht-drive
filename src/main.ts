@@ -3,7 +3,8 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { loadMap, nearestRoad } from './game/mapData';
-import { buildMapPhysics, addHedgePhysics } from './game/mapPhysics';
+import { buildMapPhysics, addHedgePhysics, addRampPhysics } from './game/mapPhysics';
+import { buildRamps, rampPoints } from './art/rampMeshes';
 import { Car } from './game/car';
 import { Input } from './game/input';
 import { placeScenery } from './game/scenery';
@@ -130,7 +131,7 @@ async function start() {
   const play = placePlaygrounds(map);
   scene.add(buildPlaygrounds(play.items, play.areas));
   scene.add(buildMapMeshes(map, scenery.grid, water, dyke), buildTrees(scenery.trees), buildLamps(scenery.lamps));
-  scene.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []));
+  scene.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []), buildRamps(map.ramps ?? []));
 
   // --- Physics & world logic ---
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
@@ -140,6 +141,7 @@ async function start() {
   water.setBridges(decks);
   buildMapPhysics(world, map, scenery.trees, decks, dyke, play);
   addHedgePhysics(world, map.hedges ?? []);
+  addRampPhysics(world, (map.ramps ?? []).map(rampPoints));
   const graph = new RoadGraph(map);
 
   // --- Player car (rebuilt when changing car or upgrades in the garage) ---
@@ -191,6 +193,7 @@ async function start() {
       dispose: () => scene.remove(m.body, ...m.wheels),
     };
   });
+  police.onReinforce = () => toast(t('policeMore'), 2);
   police.inWater = (x, z) => water.contains(x, z) && scenery.grid.edgeDistance(x, z) > 0.3;
 
   // --- Traffic ---
@@ -286,12 +289,16 @@ async function start() {
         { label: t('resume'), value: 'resume', primary: true },
         { label: t('garage'), value: 'garage' },
         { label: t('changeGrade'), value: 'grade' },
+        { label: t('startChase'), value: 'chase' },
       ]);
       if (choice === 'garage') {
         await openGarage(progress, progress.grade, () => {
           save();
           buildPlayer();
         });
+      } else if (choice === 'chase') {
+        police.startChase();
+        toast(t('policeComing'), 2.5);
       } else if (choice === 'grade') {
         progress.grade = await startScreen(progress.grade);
         save();
@@ -361,7 +368,10 @@ async function start() {
         const h1 = e.collider1(), h2 = e.collider2();
         if (h1 !== car.collider.handle && h2 !== car.collider.handle) return;
         if (police.isPoliceCollider(h1) || police.isPoliceCollider(h2) || car.sinking) return;
-        let points = Math.min(30, e.totalForceMagnitude() / (car.stats.mass * 30)) * armour;
+        // Landing after a jump pushes straight up: that is not a crash.
+        const fd = e.maxForceDirection();
+        const vertical = Math.abs(fd.y) > 0.75;
+        let points = vertical ? 0 : Math.min(30, e.totalForceMagnitude() / (car.stats.mass * 30)) * armour;
         // Hitting another road user is an accident: it counts much more (once per car per 2 s).
         const other = h1 === car.collider.handle ? h2 : h1;
         if (traffic.isTrafficCollider(other) && performance.now() - (lastHit.get(other) ?? -1e9) > 2000) {
@@ -381,7 +391,7 @@ async function start() {
       // Water: the car sinks, then comes back on the nearest road.
       const cp = car.body.translation();
       if (!car.sinking) {
-        if (cp.y < 2 && water.contains(cp.x, cp.z) && scenery.grid.edgeDistance(cp.x, cp.z) > 0.3) {
+        if (cp.y < 1.2 && water.contains(cp.x, cp.z) && scenery.grid.edgeDistance(cp.x, cp.z) > 0.3) {
           car.startSinking();
           sound.splash();
           toast(t('splash'), 3);
@@ -407,8 +417,12 @@ async function start() {
       // Police: chase, escape or caught.
       const pr = police.update(dt, car);
       if (pr === 'escaped') {
-        police.clear();
-        toast(t('escaped'));
+        const reward = 10 * police.stars;
+        progress.coins += reward;
+        save();
+        sound.coin();
+        police.clear(true);
+        toast(t('escaped', { n: reward }), 3);
       } else if (pr === 'caught') {
         car.update(STOP, world.timestep);
         caught();

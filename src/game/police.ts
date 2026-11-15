@@ -30,6 +30,12 @@ export class Police {
   unseen = 0; // seconds the player has been out of sight
   caughtTimer = 0;
   units: Unit[] = [];
+  /** Goes up each time you escape: the next chase sends more cars. Cools down slowly. */
+  heat = 0;
+  /** Seconds the current chase has lasted. */
+  chaseTime = 0;
+  /** Called when more police join a running chase. */
+  onReinforce: () => void = () => {};
   private time = 0;
   /** Set by the game: is this spot water? (Police cars can end up in the canal too.) */
   inWater: (x: number, z: number) => boolean = () => false;
@@ -46,9 +52,20 @@ export class Police {
     this.meter = Math.min(100, this.meter + points);
     const stars = STAR_LEVELS.filter((v) => this.meter >= v).length;
     if (stars > this.stars) {
+      if (this.stars === 0) this.chaseTime = 0;
       this.stars = stars;
       this.unseen = 0;
     }
+  }
+
+  /** Starts a chase right away (menu option). */
+  startChase() {
+    this.addCrash(Math.max(0, STAR_LEVELS[0] - this.meter));
+  }
+
+  /** How many police cars take part: one per star, plus extra after earlier escapes. */
+  get wantedCars() {
+    return this.stars ? Math.min(6, this.stars + this.heat) : 0;
   }
 
   isPoliceCollider(handle: number) {
@@ -59,17 +76,29 @@ export class Police {
   update(dt: number, player: Car): 'caught' | 'escaped' | null {
     this.time += dt;
     this.meter = Math.max(0, this.meter - dt * 1.2);
-    if (this.stars === 0) return null;
+    if (this.stars === 0) {
+      this.heat = Math.max(0, this.heat - dt / 90);
+      return null;
+    }
+    // The longer you stay free, the more police join (every 25 s, up to 3 stars).
+    this.chaseTime += dt;
+    if (this.stars < 3 && this.chaseTime > 25 * this.stars) {
+      this.stars++;
+      this.meter = Math.max(this.meter, STAR_LEVELS[this.stars - 1]);
+      this.onReinforce();
+    }
+    // Keep the wanted level while the chase is on.
+    this.meter = Math.max(this.meter, STAR_LEVELS[0]);
 
     const p = player.body.translation();
     // One police car per star, spawned out of sight on the road network.
-    while (this.units.length < this.stars) this.spawn(p.x, p.z);
+    while (this.units.length < this.wantedCars) this.spawn(p.x, p.z);
 
     let seen = false;
     let close = false;
     for (const u of [...this.units]) {
       const c = u.car.body.translation();
-      if (!u.car.sinking && c.y < 2 && this.inWater(c.x, c.z)) u.car.startSinking();
+      if (!u.car.sinking && c.y < 1.2 && this.inWater(c.x, c.z)) u.car.startSinking();
       if (u.car.sinking > 3) {
         // Sunk: remove it; a new one is sent next frame.
         u.car.dispose();
@@ -99,8 +128,9 @@ export class Police {
     }
   }
 
-  /** Removes all police and resets the wanted level. */
-  clear() {
+  /** Removes all police and resets the wanted level. escaped: the next chase gets more cars. */
+  clear(escaped = false) {
+    if (escaped) this.heat = Math.min(3, Math.floor(this.heat) + 1);
     for (const u of this.units) {
       u.car.dispose();
       u.visual.dispose();
