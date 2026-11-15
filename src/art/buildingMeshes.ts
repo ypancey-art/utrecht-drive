@@ -126,7 +126,7 @@ const STYLES: Record<string, Style> = {
   },
   mosque: {
     bay: 3.4, floor: 5,
-    walls: [0xefeae0, 0xe6dfcf],
+    walls: [0xd6bd85, 0xcdb27a], // yellow brick (Street View, Zamenhofdreef)
     roofs: [0x7c8a96],
     draw: (g) => {
       g.fillStyle = '#2f4d6b';
@@ -203,6 +203,81 @@ const STYLES: Record<string, Style> = {
       glass(g, 8, 18, 112, 62, '#3a3b3e');
       g.fillStyle = '#d6d3cc';
       g.fillRect(0, 104, 128, 24); // concrete floor edge
+    },
+  },
+  flatSand: {
+    // 1960s gallery flats in sand-coloured concrete with long window bands (Zamenhofdreef).
+    bay: 3.6, floor: 2.8,
+    plain: '#c2ad8c',
+    walls: [0xffffff],
+    roofs: [0x6f6f72],
+    draw: (g) => {
+      g.fillStyle = '#c2ad8c';
+      g.fillRect(0, 0, 128, 128);
+      glass(g, 4, 30, 120, 40, '#d8cdb8');
+      g.fillStyle = '#d8cdb8';
+      g.fillRect(0, 96, 128, 32); // balcony band
+      g.fillStyle = 'rgba(0,0,0,0.2)';
+      g.fillRect(0, 94, 128, 2);
+    },
+  },
+  row70: {
+    // 1970 terraced houses: brick, long balcony with grey glass railing on the first floor.
+    bay: 5.4, floor: 2.9,
+    plain: '#8f5a46',
+    walls: [0xffffff],
+    roofs: [0x3f3f44],
+    draw: (g) => {
+      g.fillStyle = '#8f5a46';
+      g.fillRect(0, 0, 128, 128);
+      bricks(g);
+      glass(g, 10, 16, 70, 46, '#f4f4f0');
+      glass(g, 94, 16, 24, 70, '#f4f4f0');
+      g.fillStyle = 'rgba(160,172,180,0.85)';
+      g.fillRect(0, 84, 128, 22); // glass balcony railing
+      g.fillStyle = '#d9dcde';
+      g.fillRect(0, 106, 128, 6);
+    },
+  },
+  row63w: {
+    // 1960s terraced houses with white render and dark doors (Moldaudreef).
+    bay: 5.0, floor: 2.8,
+    plain: '#e9e6df',
+    walls: [0xffffff],
+    roofs: [0x5d6066],
+    draw: (g) => {
+      g.fillStyle = '#e9e6df';
+      g.fillRect(0, 0, 128, 128);
+      glass(g, 12, 24, 64, 50, '#f4f4f0');
+      g.fillStyle = '#2f4d6b';
+      g.fillRect(92, 40, 22, 88); // door
+    },
+  },
+  shops: {
+    // Low shop buildings: big glass shopfronts under a dark fascia.
+    bay: 6, floor: 4.5,
+    plain: '#5c6066',
+    walls: [0xffffff],
+    roofs: [0x5d6066],
+    draw: (g) => {
+      g.fillStyle = '#5c6066';
+      g.fillRect(0, 0, 128, 128);
+      g.fillStyle = '#2b3442';
+      g.fillRect(0, 0, 128, 30); // fascia
+      glass(g, 6, 40, 116, 88, '#3a3f46');
+    },
+  },
+  brickOffice: {
+    // 2000s office blocks: red brick with a regular grid of square windows (Tiberdreef / Aidadreef).
+    bay: 2.4, floor: 3.2,
+    plain: '#a3492f',
+    walls: [0xffffff],
+    roofs: [0x3a3b3e],
+    draw: (g) => {
+      g.fillStyle = '#a3492f';
+      g.fillRect(0, 0, 128, 128);
+      bricks(g);
+      glass(g, 30, 30, 68, 64, '#2f3a44');
     },
   },
   modern: {

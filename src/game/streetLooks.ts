@@ -20,6 +20,14 @@ export const STREET_LOOKS: Rule[] = [
   { street: 'Anna van Burendreef', years: [1991, 2004], maxH: 12, look: 'row02' }, // orange-brown brick, grey panels
   { street: 'Anna van Burendreef', years: [2003, 2012], minH: 12, look: 'woodSlat' }, // wooden slats + concrete floor edges
   { street: 'Anna van Burendreef', years: [2003, 2012], maxH: 12, look: 'modern', wall: 0xa58468 },
+  // Zamenhofdreef (Street View, Sept 2021 / Oct 2022 / Jun 2026)
+  { street: 'Zamenhofdreef', years: [1960, 1972], minH: 12, look: 'flatSand' }, // sand concrete, long window bands
+  { street: 'Zamenhofdreef', years: [1969, 1972], maxH: 6.5, look: 'shops' }, // shopfronts
+  { street: 'Zamenhofdreef', years: [1969, 1972], minH: 6.5, maxH: 12, look: 'row70' }, // brick, glass balconies
+  // Tiberdreef by the station (Street View, Jul 2026)
+  { street: 'Tiberdreef', years: [1995, 2005], minH: 12, look: 'brickOffice' }, // red brick, square windows
+  // Moldaudreef (Street View, Jun 2026)
+  { street: 'Moldaudreef', years: [1960, 1965], maxH: 12, look: 'row63w' }, // white render
 ];
 
 const segDist = (x: number, z: number, ax: number, az: number, bx: number, bz: number) => {
