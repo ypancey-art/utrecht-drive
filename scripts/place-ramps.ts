@@ -10,7 +10,7 @@ import { placeScenery } from '../src/game/scenery';
 import { buildWorld, loadMapData } from '../tests/world';
 import { Car } from '../src/game/car';
 import { CARS } from '../src/game/cars';
-import { rampPoints } from '../src/art/rampMeshes';
+import { rampHulls } from '../src/art/rampMeshes';
 import { loopSections, loopEntry, LOOP_W } from '../src/game/loops';
 
 const DATA = 'public/data/overvecht.json';
@@ -141,7 +141,7 @@ let rampBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
 function landsOnRoof(r: Ramp, carId: string) {
   const spec = CARS.find((c) => c.id === carId)!;
   const ux = Math.cos(r.yaw), uz = Math.sin(r.yaw);
-  const col = world.createCollider(RAPIER.ColliderDesc.convexHull(new Float32Array(rampPoints(r).flat()))!.setFriction(1), rampBody);
+  const cols = rampHulls(r).map((h) => world.createCollider(RAPIER.ColliderDesc.convexHull(new Float32Array(h.flat()))!.setFriction(1), rampBody));
   const car = new Car(world, spec.stats, spec.dims);
   car.place(r.x - ux * (r.len / 2 + 36), r.z - uz * (r.len / 2 + 36), ux, uz);
   let ok = false;
@@ -160,7 +160,7 @@ function landsOnRoof(r: Ramp, carId: string) {
     if (along > r.len / 2 + 60 || (p.y < 1.5 && along > r.len / 2 + 2)) break; // fell short, hit the wall or flew over
   }
   car.dispose();
-  world.removeCollider(col, false);
+  for (const col of cols) world.removeCollider(col, false);
   return ok;
 }
 let tried = 0;

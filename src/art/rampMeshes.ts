@@ -1,14 +1,43 @@
 // Jump ramps (positions come from scripts/place-ramps.ts): a wedge with yellow/black stripes.
+// The start is curved (it begins flat and bends up to the ramp's slope) so a car rolls onto it
+// instead of bumping into a sharp edge. The lip (height and angle) is where the data says.
 import * as THREE from 'three';
 import type { Ramp } from '../game/mapData';
 
-/** Corner points of a ramp wedge in world space (also used for its collider). */
-export function rampPoints(r: Ramp): number[][] {
+const TOE = 5; // length (m) of the curved start
+
+/**
+ * Side profile of a ramp: (u, y) points from the foot to the lip, u along the ramp (lip at +len/2).
+ * A parabola tangent to the ground over the first TOE metres, then straight up to (len/2, h).
+ * The foot is TOE/2 in front of where a plain wedge of the same slope would start.
+ */
+export function rampProfile(r: Ramp): [number, number][] {
+  const L = r.len / 2, k = r.h / r.len;
+  const T = Math.min(TOE, r.len);
+  const u0 = -L - T / 2;
+  const out: [number, number][] = [];
+  const n = 8;
+  for (let i = 0; i <= n; i++) {
+    const t = (T * i) / n;
+    out.push([u0 + t, (k * t * t) / (2 * T)]);
+  }
+  out.push([L, r.h]);
+  return out;
+}
+
+/** Convex pieces of a ramp (each a slab from the profile down to the ground), for the collider. */
+export function rampHulls(r: Ramp): number[][][] {
   const c = Math.cos(r.yaw), s = Math.sin(r.yaw);
   const P = (u: number, y: number, v: number) => [r.x + c * u - s * v, y, r.z + s * u + c * v];
-  const L = r.len / 2, W = r.w / 2;
-  // back-left, back-right, front-left, front-right (bottom), front-left, front-right (top)
-  return [P(-L, 0, -W), P(-L, 0, W), P(L, 0, -W), P(L, 0, W), P(L, r.h, -W), P(L, r.h, W)];
+  const W = r.w / 2, prof = rampProfile(r);
+  const hulls: number[][][] = [];
+  for (let i = 0; i < prof.length - 1; i++) {
+    const [ua, ya] = prof[i], [ub, yb] = prof[i + 1];
+    const pts = [P(ua, 0, -W), P(ua, 0, W), P(ub, 0, -W), P(ub, 0, W), P(ub, yb, -W), P(ub, yb, W)];
+    if (ya > 0.001) pts.push(P(ua, ya, -W), P(ua, ya, W));
+    hulls.push(pts);
+  }
+  return hulls;
 }
 
 function stripes() {
@@ -34,19 +63,41 @@ export function buildRamps(ramps: Ramp[]): THREE.Group {
   const group = new THREE.Group();
   if (!ramps.length) return group;
   const top = new THREE.MeshLambertMaterial({ map: stripes(), side: THREE.DoubleSide });
-  const side = new THREE.MeshLambertMaterial({ color: 0x8e979f });
+  const side = new THREE.MeshLambertMaterial({ color: 0x8e979f, side: THREE.DoubleSide });
   for (const r of ramps) {
-    const [bl, br, fl, fr, tl, tr] = rampPoints(r);
-    const slope = Math.hypot(r.len, r.h);
+    const c = Math.cos(r.yaw), sn = Math.sin(r.yaw);
+    const P = (u: number, y: number, v: number) => [r.x + c * u - sn * v, y, r.z + sn * u + c * v];
+    const W = r.w / 2, prof = rampProfile(r);
+    const tp: number[] = [], uv: number[] = [], ti: number[] = [];
+    const sp: number[] = [], si: number[] = [];
+    const quad = (q: number[][]) => {
+      const base = sp.length / 3;
+      for (const v of q) sp.push(...v);
+      si.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    };
+    let dist = 0;
+    prof.forEach(([u, y], i) => {
+      if (i) dist += Math.hypot(u - prof[i - 1][0], y - prof[i - 1][1]);
+      tp.push(...P(u, y, -W), ...P(u, y, W));
+      uv.push(0, dist / 4, 1, dist / 4);
+      if (!i) return;
+      const a = (i - 1) * 2, b = i * 2;
+      ti.push(a, b + 1, a + 1, a, b, b + 1);
+      const [pu, py] = prof[i - 1];
+      for (const v of [-W, W]) quad([P(pu, 0, v), P(u, 0, v), P(u, y, v), P(pu, py, v)]);
+    });
+    const [uL, hL] = prof[prof.length - 1];
+    quad([P(uL, 0, -W), P(uL, 0, W), P(uL, hL, W), P(uL, hL, -W)]);
     const g1 = new THREE.BufferGeometry();
-    g1.setAttribute('position', new THREE.Float32BufferAttribute([...bl, ...tr, ...br, ...bl, ...tl, ...tr], 3));
-    g1.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, slope / 4, 1, 0, 0, 0, 0, slope / 4, 1, slope / 4], 2));
+    g1.setAttribute('position', new THREE.Float32BufferAttribute(tp, 3));
+    g1.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g1.setIndex(ti);
     g1.computeVertexNormals();
     const g2 = new THREE.BufferGeometry();
-    g2.setAttribute('position', new THREE.Float32BufferAttribute([...bl, ...fl, ...tl, ...br, ...tr, ...fr, ...fl, ...fr, ...tr, ...fl, ...tr, ...tl], 3));
+    g2.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+    g2.setIndex(si);
     g2.computeVertexNormals();
     const m1 = new THREE.Mesh(g1, top), m2 = new THREE.Mesh(g2, side);
-    m2.material.side = THREE.DoubleSide;
     m1.castShadow = m1.receiveShadow = m2.castShadow = true;
     group.add(m1, m2);
   }

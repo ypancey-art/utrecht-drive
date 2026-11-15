@@ -7,7 +7,8 @@ import { buildMapPhysics, addHedgePhysics, addRampPhysics, addLoopPhysics, addTr
 import { buildLoops, buildTrack } from './art/loopMeshes';
 import { buildCatalogue, type BuildItem } from './game/builder';
 import { openBuilder } from './ui/builder';
-import { buildRamps, rampPoints } from './art/rampMeshes';
+import { buildRamps, rampHulls } from './art/rampMeshes';
+import { buildEdgeWall } from './art/edgeWall';
 import { Car } from './game/car';
 import { Input } from './game/input';
 import { placeScenery } from './game/scenery';
@@ -180,16 +181,17 @@ async function start() {
   mark('bridges');
   buildMapPhysics(world, map, scenery.trees, decks, dyke, play);
   addHedgePhysics(world, map.hedges ?? []);
-  addRampPhysics(world, freeRamps.map(rampPoints));
+  addRampPhysics(world, freeRamps.flatMap(rampHulls));
   const loopColliders = addLoopPhysics(world, freeLoops);
   // Things built in the city builder: added to the scene and the physics (also later, when built).
+  scene.add(buildEdgeWall());
   const postOk = (x: number, z: number) => scenery.grid.edgeDistance(x, z) > 1.2;
   const addBuilt = (id: string) => {
     const ramps = (map.ramps ?? []).filter((r) => r.build === id), loops = (map.loops ?? []).filter((l) => l.build === id);
     const tracks = (map.tracks ?? []).filter((t) => t.id === id);
     if (ramps.length) {
       scene.add(buildRamps(ramps));
-      addRampPhysics(world, ramps.map(rampPoints));
+      addRampPhysics(world, ramps.flatMap(rampHulls));
     }
     if (loops.length) {
       scene.add(buildLoops(loops));
@@ -425,6 +427,7 @@ async function start() {
   // --- Loop ---
   const camPos = new THREE.Vector3();
   const lookAt = new THREE.Vector3();
+  let camPull = 1; // fraction of the camera distance left after walls and bridges pull it in
   const fwd = new THREE.Vector3();
   const tmp = new THREE.Vector3();
   let acc = 0;
@@ -626,6 +629,25 @@ async function start() {
     if (firstFrame) camPos.copy(desired);
     camPos.lerp(desired, 1 - Math.exp(-dt * 4));
     camera.position.copy(camPos);
+    // Keep the camera out of bridges, tunnels and walls: below any ceiling over the car, and in
+    // front of anything solid between the car and the camera (only static things count).
+    {
+      const head = { x: p.x, y: p.y + 1.2, z: p.z };
+      const solid = (c: RAPIER.Collider) => c.shape.type !== RAPIER.ShapeType.Cylinder; // not trees, lamp posts, track posts
+      const cast = (d: { x: number; y: number; z: number }, max: number) =>
+        world.castRay(new RAPIER.Ray(head, d), max, true, RAPIER.QueryFilterFlags.ONLY_FIXED, undefined, undefined, undefined, solid);
+      const up = cast({ x: 0, y: 1, z: 0 }, 6);
+      if (up) camera.position.y = Math.min(camera.position.y, head.y + Math.max(0.3, up.timeOfImpact - 0.5));
+      const dx = camera.position.x - head.x, dy = camera.position.y - head.y, dz = camera.position.z - head.z;
+      const len = Math.hypot(dx, dy, dz);
+      if (len > 0.5) {
+        const hit = cast({ x: dx / len, y: dy / len, z: dz / len }, len);
+        // Pull in at once when something is in the way; move back out smoothly.
+        const want = hit ? Math.max(1.5, hit.timeOfImpact - 0.4) / len : 1;
+        camPull = want < camPull ? want : Math.min(want, camPull + dt * 0.8);
+        camera.position.set(head.x + dx * camPull, head.y + dy * camPull, head.z + dz * camPull);
+      }
+    }
     lookAt.set(p.x, p.y + 1, p.z).addScaledVector(fwd, 3);
     camera.lookAt(lookAt);
     sun.position.set(p.x, 0, p.z).addScaledVector(SUN_DIR, 150);

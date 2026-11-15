@@ -7,7 +7,7 @@ import { placeScenery } from '../src/game/scenery';
 import { WaterMap } from '../src/game/water';
 import { bridgeSegments } from '../src/art/mapMeshes';
 import { buildMapPhysics, addHedgePhysics, addRampPhysics, addLoopPhysics, addTrackPhysics } from '../src/game/mapPhysics';
-import { rampPoints } from '../src/art/rampMeshes';
+import { rampHulls } from '../src/art/rampMeshes';
 
 export function loadMapData(): MapData {
   const map = JSON.parse(readFileSync('public/data/overvecht.json', 'utf8')) as MapData;
@@ -31,7 +31,7 @@ export async function buildWorld(map: MapData = loadMapData()) {
   world.timestep = 1 / 60;
   buildMapPhysics(world, map, scenery.trees, decks, dyke);
   addHedgePhysics(world, map.hedges ?? []);
-  addRampPhysics(world, (map.ramps ?? []).map(rampPoints));
+  addRampPhysics(world, (map.ramps ?? []).flatMap(rampHulls));
   addLoopPhysics(world, map.loops ?? []);
   // Everything that can be built is in the test world, so the tests cover it all.
   addTrackPhysics(world, map.tracks ?? [], (x, z) => scenery.grid.edgeDistance(x, z) > 1.2);
