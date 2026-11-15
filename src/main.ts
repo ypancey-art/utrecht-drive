@@ -22,7 +22,7 @@ import { sound } from './audio/sound';
 import { tileStatic } from './art/tiles';
 import { applyStreetLooks } from './game/streetLooks';
 import { People } from './game/people';
-import { makePersonVisual } from './art/peopleMeshes';
+import { makePersonVisual, makeCrashFx } from './art/peopleMeshes';
 import { Traffic } from './game/traffic';
 import { buildMissions, MissionRunner, MISSION_SIZE, REACH_RADIUS } from './game/missions';
 import { CARS, POLICE, carById, upgradedStats, armourFactor } from './game/cars';
@@ -274,9 +274,13 @@ async function start() {
     (kind) => makePersonVisual(scene, kind),
     isTouch ? 18 : 40,
   );
-  people.onHit = (strength) => {
+  const crashFx = makeCrashFx(scene);
+  let shake = 0; // camera shake after hitting someone
+  people.onHit = (strength, x, z) => {
     police.addCrash(30 * armourFactor(carById(progress.carId), upgradesFor(progress, progress.carId)));
-    sound.crash(0.3 + strength * 0.4);
+    sound.crash(0.5 + strength * 0.5);
+    crashFx.burst(x, z, strength);
+    shake = Math.max(shake, 0.15 + strength * 0.35);
   };
 
   // --- Missions ---
@@ -648,8 +652,15 @@ async function start() {
         camera.position.set(head.x + dx * camPull, head.y + dy * camPull, head.z + dz * camPull);
       }
     }
+    if (shake > 0.01) {
+      camera.position.x += (Math.random() - 0.5) * shake;
+      camera.position.y += (Math.random() - 0.5) * shake;
+      camera.position.z += (Math.random() - 0.5) * shake;
+      shake *= Math.exp(-dt * 5);
+    }
     lookAt.set(p.x, p.y + 1, p.z).addScaledVector(fwd, 3);
     camera.lookAt(lookAt);
+    crashFx.update(dt, camera);
     sun.position.set(p.x, 0, p.z).addScaledVector(SUN_DIR, 150);
     sun.target.position.set(p.x, 0, p.z);
     sky.position.copy(camera.position);

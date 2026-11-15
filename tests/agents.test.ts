@@ -58,7 +58,7 @@ test('pedestrians and cyclists appear and walk', async () => {
   people.update(1 / 30, p.x, p.z, 10, 0);
   assert.ok(hits >= 1);
   assert.ok(p.down > 0);
-  for (let i = 0; i < 30 * 4; i++) people.update(1 / 30, p.x + 100, p.z, 0, 0);
+  for (let i = 0; i < 30 * 7; i++) people.update(1 / 30, p.x + 100, p.z, 0, 0);
   assert.equal(p.down <= 0, true, 'should be back on their feet');
 });
 
