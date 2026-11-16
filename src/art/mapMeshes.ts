@@ -13,7 +13,7 @@ import { MAP_HALF_SIZE } from '../game/mapData';
 import { palette } from './palette';
 
 // Flat layers are drawn in this order without writing depth, so they never z-fight.
-const LAYER = { ground: -20, green: -19, water: -18, path: -17, rail: -16, pavement: -15, road: -14, marking: -13 };
+const LAYER = { ground: -20, green: -19, water: -18, path: -17, cycle: -16.5, rail: -16, pavement: -15, road: -14, marking: -13 };
 
 function flatMesh(geo: THREE.BufferGeometry | null, color: number, order: number) {
   if (!geo) return null;
@@ -235,7 +235,7 @@ function waterEdges(map: MapData) {
 
 /** Road and path pieces that cross water: these become bridge decks. */
 export function bridgeSegments(map: MapData, water: WaterMap, grid: RoadGrid) {
-  const segs: { ax: number; az: number; bx: number; bz: number; width: number; culvert?: boolean; rails: [boolean, boolean]; drivable: boolean }[] = [];
+  const segs: { ax: number; az: number; bx: number; bz: number; width: number; culvert?: boolean; rails: [boolean, boolean]; drivable: boolean; cycle?: boolean }[] = [];
   for (const r of map.roads) {
     if (r.tunnel) continue;
     for (let i = 0; i < r.pts.length - 1; i++) {
@@ -255,7 +255,7 @@ export function bridgeSegments(map: MapData, water: WaterMap, grid: RoadGrid) {
           // Check along the whole railing piece, so it never blocks a path or street joining the bridge.
           const free = (s: number) => [0, 0.5, 1].every((t) => grid.edgeDistance(x0 + (x1 - x0) * t + s * nx, z0 + (z1 - z0) * t + s * nz) > -0.3);
           const rails: [boolean, boolean] = [wantRails && free(1), wantRails && free(-1)];
-          segs.push({ ax: x0, az: z0, bx: x1, bz: z1, width, culvert, rails, drivable: r.drivable });
+          segs.push({ ax: x0, az: z0, bx: x1, bz: z1, width, culvert, rails, drivable: r.drivable, cycle: r.kind === 'cycleway' });
         }
       }
     }
@@ -267,14 +267,15 @@ function bridges(segs: ReturnType<typeof bridgeSegments>): THREE.Group {
   const g = new THREE.Group();
   // Extend each piece a little so neighbouring pieces overlap without gaps.
   // Road decks in road colour, drawn just above path decks (where a path deck touches a road).
-  for (const drivable of [false, true]) {
-    const deck = ribbons(segs.filter((s) => s.drivable === drivable).map((s) => {
+  for (const kind of ['path', 'cycle', 'road'] as const) {
+    const drivable = kind === 'road';
+    const deck = ribbons(segs.filter((s) => (s.drivable ? 'road' : s.cycle ? 'cycle' : 'path') === kind).map((s) => {
       const len = Math.hypot(s.bx - s.ax, s.bz - s.az) || 1, ux = (s.bx - s.ax) / len, uz = (s.bz - s.az) / len;
       return { pts: [[s.ax - ux * 0.3, s.az - uz * 0.3], [s.bx + ux * 0.3, s.bz + uz * 0.3]] as Pt[], width: s.width };
     }));
     if (!deck) continue;
-    deck.translate(0, drivable ? 0.06 : 0.03, 0);
-    const m = new THREE.Mesh(deck, new THREE.MeshLambertMaterial({ color: drivable ? palette.road : palette.path }));
+    deck.translate(0, drivable ? 0.06 : kind === 'cycle' ? 0.04 : 0.03, 0);
+    const m = new THREE.Mesh(deck, new THREE.MeshLambertMaterial({ color: palette[kind] }));
     m.receiveShadow = true;
     g.add(m);
   }
@@ -373,7 +374,8 @@ export function buildMapMeshes(map: MapData, grid: RoadGrid, water: WaterMap, dy
 
   add(flatMesh(ground, palette.ground, LAYER.ground));
   add(flatMesh(polygons([...map.green, ...map.woods]), palette.green, LAYER.green));
-  add(flatMesh(ribbons(map.roads.filter((r) => !r.drivable)), palette.path, LAYER.path));
+  add(flatMesh(ribbons(map.roads.filter((r) => !r.drivable && r.kind !== 'cycleway')), palette.path, LAYER.path));
+  add(flatMesh(ribbons(map.roads.filter((r) => !r.drivable && r.kind === 'cycleway')), palette.cycle, LAYER.cycle));
   add(railways(map.rails, dyke));
   // Pavements: a wider light strip under the bigger streets.
   const paved = streets.filter((r) => r.kind !== 'service' && r.width >= 4.5);

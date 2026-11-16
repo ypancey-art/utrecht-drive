@@ -8,6 +8,7 @@ export const palette = {
   pavement: 0xb9b5ad,
   marking: 0xf2f2ee,
   path: 0xcdbb9c,
+  cycle: 0x7d3a33, // red asphalt bike paths ("rood fietspad"), matched to Mapillary photos
   ballast: 0x8a8178,
   dyke: 0x7fa65a,
   sleeper: 0x5b4a3e,

@@ -201,7 +201,8 @@ function drawBackground(map: MapData): HTMLCanvasElement {
   for (const w of map.water) poly(w.pts, '#3f87c4');
   for (const w of map.waterways) line(w.pts, Math.max(3, w.width), '#3f87c4');
   for (const r of map.rails) line(r.pts, 4, '#8a7f74');
-  for (const r of map.roads) if (!r.drivable) line(r.pts, 2, 'rgba(200,190,170,0.45)');
+  for (const r of map.roads) if (!r.drivable && r.kind !== 'cycleway') line(r.pts, 2, 'rgba(200,190,170,0.45)');
+  for (const r of map.roads) if (r.kind === 'cycleway') line(r.pts, 3, 'rgba(190,90,72,0.8)');
   for (const r of map.roads) if (r.drivable) line(r.pts, Math.max(11, r.width + 4), '#1d2330');
   for (const r of map.roads) if (r.drivable) line(r.pts, Math.max(8, r.width + 1), '#f2efe8');
   return cv;
