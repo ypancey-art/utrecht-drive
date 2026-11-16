@@ -58,7 +58,7 @@ export function buildCatalogue(map: MapData): BuildItem[] {
     });
   }
   // Long tracks: each one a bit more expensive.
-  (map.tracks ?? []).forEach((t, i) => {
+  (map.tracks ?? []).filter((t) => !t.free).forEach((t, i) => {
     const first = t.parts[0];
     const p = first.kind === 'path' ? first.pts[0] : [0, 0, 0];
     items.push({

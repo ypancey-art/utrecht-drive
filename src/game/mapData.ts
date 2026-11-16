@@ -21,7 +21,8 @@ export interface Building {
 }
 /** A jump ramp: centre, direction of travel up the ramp (yaw, radians, 0 = +x), size. */
 /** water: jump over water; roof: drive up onto a roof; kick: steep kicker to jump onto a roof (roofH = that roof). */
-export interface Ramp { x: number; z: number; yaw: number; len: number; h: number; w: number; kind: 'water' | 'roof' | 'kick'; roofH?: number; build?: string }
+// kind 'rail': on top of the railway dyke (y = its base height).
+export interface Ramp { x: number; z: number; yaw: number; len: number; h: number; w: number; kind: 'water' | 'roof' | 'kick' | 'rail'; roofH?: number; y?: number; build?: string }
 /** A loop: (x, z) is the bottom where the car enters, yaw the direction of the loop, r its radius, d how far sideways it comes out. */
 export interface Loop { x: number; z: number; yaw: number; r: number; d: number; y?: number; build?: string }
 /** An elevated Hot Wheels track: path pieces (3D polylines, x/y/z) and loops in driving order.
@@ -31,6 +32,7 @@ export interface Track {
   name: string;
   parts: ({ kind: 'path'; pts: [number, number, number][] } | { kind: 'loop'; loop: Loop })[];
   through: { b: number; y: number }[];
+  free?: boolean; // there from the start (not built in the city builder)
 }
 export interface CityTree { p: Pt; genus: string; species: string; year: number }
 export interface MapData {

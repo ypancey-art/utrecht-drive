@@ -143,3 +143,9 @@ Known gaps / next steps:
 - Air tricks: hold Space (handbrake) in the air + arrows: up/down = front/back flip, left/right = spin (`Car.airTrick`). Without Space a jump flies as before (tests unchanged). Touch: orange 🌀 button = handbrake.
 - Jump bonuses on landing (`landJump` in main.ts): flip/roll +30 each, 360° spin +20 each, long (>25 m) +10, mega (>40 m) +20, high (>6 m) +10, perfect landing +10. Shown as a big orange combo text.
 - Bike paths (OSM `cycleway`) are red asphalt (`palette.cycle` 0x7d3a33, own layer above footpaths; bike bridges too; reddish on the minimap). Colour checked against Mapillary photos of Overvecht fietspaden (scratch: scripts/cache/bikefetch.mjs, bikecolor.py).
+
+## Underpasses, camera, railway stunts (2026-11-16)
+- Camera keeps a fixed 9 m behind the car (only direction/height smoothed) — no more falling far behind at top speed.
+- Bridges: an OSM-tagged bridge only gets a deck/railings near water, and path bridge pieces never lie on a street (fixed floating slabs/railings across Tiberdreef and Brailledreef).
+- Railway dyke: gentle 1:3.2 grass slopes (drivable) wherever they stay clear of roads, water and buildings (steep 1:1.5 next to them); applied after the gap-closing filter.
+- `scripts/place-rail-stunts.ts` (npm run place-rail-stunts): 4 ramps on top of the tracks (kind 'rail', `y` = RAIL_H) and a free Hot Wheels track "Spoorlus" (`free: true`, id railLoop) that leaves the tracks, goes round a building at ~(504,-63) with a loop behind it, and rejoins the tracks. Test-driven with compact + sport (the hypercar is too fast for its corners at full throttle). Ramp.y and Car.place(…, ground) added.

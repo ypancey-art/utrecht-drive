@@ -63,13 +63,15 @@ for (const id of ['compact', 'sport']) {
       const ux = Math.cos(r.yaw), uz = Math.sin(r.yaw);
       const car = new Car(world, spec.stats, spec.dims);
       // Start where place-ramps.ts guarantees a free run-up for this kind of ramp.
-      const run = r.len / 2 + (r.kind === 'water' ? 38 : r.kind === 'kick' ? 36 : 26);
-      car.place(r.x - ux * run, r.z - uz * run, ux, uz);
+      const run = r.len / 2 + (r.kind === 'water' ? 38 : r.kind === 'kick' ? 36 : r.kind === 'rail' ? 36 : 26);
+      car.place(r.x - ux * run, r.z - uz * run, ux, uz, r.y ?? 0);
       let sank = false, maxY = 0, landed = false;
       for (let i = 0; i < 60 * 9; i++) {
         const p = car.body.translation(), q = car.body.rotation();
         const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
-        const ang = Math.atan2(fx * uz - fz * ux, fx * ux + fz * uz);
+        // On the narrow railway dyke: also keep to the line of the ramp.
+        const side = r.kind === 'rail' ? (p.x - r.x) * -uz + (p.z - r.z) * ux : 0;
+        const ang = Math.atan2(fx * uz - fz * ux, fx * ux + fz * uz) - side * 0.15;
         car.update({ throttle: 1, steer: Math.max(-1, Math.min(1, ang * 3)), handbrake: false }, world.timestep);
         world.step();
         maxY = Math.max(maxY, p.y);
@@ -81,13 +83,14 @@ for (const id of ['compact', 'sport']) {
           sank = true;
           break;
         }
-        if ((p.x - r.x) * ux + (p.z - r.z) * uz > r.len / 2 + (r.kind === 'roof' ? 12 : r.kind === 'kick' ? 60 : 30)) break;
+        if ((p.x - r.x) * ux + (p.z - r.z) * uz > r.len / 2 + (r.kind === 'roof' ? 12 : r.kind === 'kick' ? 60 : r.kind === 'rail' ? 90 : 30) && (r.kind !== 'rail' || car.grounded)) break;
       }
       const where = `${r.kind} ramp at ${r.x},${r.z}`;
       assert.ok(!sank, `${where}: the car sank`);
       assert.ok(!car.flipped, `${where}: the car flipped`);
       if (r.kind === 'kick') assert.ok(landed, `${where}: did not land on the roof`);
       else if (r.kind === 'roof') assert.ok(car.body.translation().y > r.h, `${where}: did not get onto the roof (y ${car.body.translation().y.toFixed(1)})`);
+      else if (r.kind === 'rail') assert.ok(maxY > r.y! + 2.5 && car.body.translation().y > r.y! - 0.5, `${where}: no jump, or fell off the railway (y ${car.body.translation().y.toFixed(1)})`);
       else assert.ok(maxY > 2.5, `${where}: no real jump`);
       car.dispose();
     }
@@ -133,7 +136,9 @@ test('every Hot Wheels track can be driven from start to end with the compact', 
     const all = paths.flat();
     const [sx, , sz] = all[0], [nx, , nz] = all[2], l = Math.hypot(nx - sx, nz - sz);
     const car = new Car(world, spec.stats, spec.dims);
-    car.place(sx - ((nx - sx) / l) * 10, sz - ((nz - sz) / l) * 10, (nx - sx) / l, (nz - sz) / l);
+    // Tracks on the railway start and end on the dyke (y = the track bed).
+    const base = t.free ? all[0][1] : 0;
+    car.place(sx - ((nx - sx) / l) * 10, sz - ((nz - sz) / l) * 10, (nx - sx) / l, (nz - sz) / l, base);
     const end = all[all.length - 1];
     let top = 0, reached = false;
     for (let i = 0; i < 60 * 40 && !reached; i++) {
@@ -151,7 +156,7 @@ test('every Hot Wheels track can be driven from start to end with the compact', 
       car.update({ throttle: 1, steer: inLoop || upY < 0.7 ? 0 : Math.max(-1, Math.min(1, ang * 2)), handbrake: false }, world.timestep);
       world.step();
       if (inLoop) top = Math.max(top, p.y);
-      if (Math.hypot(p.x - end[0], p.z - end[2]) < 8 && p.y < 2.5) reached = true;
+      if (Math.hypot(p.x - end[0], p.z - end[2]) < 8 && p.y < base + 2.5) reached = true;
     }
     assert.ok(top > (loop.y ?? 0) + loop.r * 2 - 1.5, `${t.id}: did not get over the top of its loop (${top.toFixed(1)} m)`);
     assert.ok(reached && !car.flipped, `${t.id} (${t.name}): did not reach the end`);

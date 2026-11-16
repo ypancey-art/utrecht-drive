@@ -203,12 +203,14 @@ async function start() {
       for (const h of addTrackPhysics(world, [t], postOk)) loopColliders.add(h);
     }
   };
-  for (const id of progress.built) addBuilt(id);
+  // Free tracks are there from the start; the others once built.
+  const shown = [...(map.tracks ?? []).filter((t) => t.free).map((t) => t.id), ...progress.built];
+  for (const id of shown) addBuilt(id);
   const minimap = new Minimap(map);
   minimap.addRamps(freeRamps);
   minimap.addLoops(freeLoops);
   document.body.appendChild(minimap.el);
-  for (const id of progress.built) addToMinimap(id);
+  for (const id of shown) addToMinimap(id);
   function addToMinimap(id: string) {
     minimap.addRamps((map.ramps ?? []).filter((r) => r.build === id));
     minimap.addLoops((map.loops ?? []).filter((l) => l.build === id));

@@ -12,7 +12,8 @@
     "fetch-facades": "node scripts/fetch-facades.mjs",
     "fetch-greenery": "node scripts/fetch-greenery.mjs",
     "place-ramps": "tsx scripts/place-ramps.ts",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "place-rail-stunts": "tsx scripts/place-rail-stunts.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

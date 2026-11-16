@@ -28,7 +28,8 @@ export function rampProfile(r: Ramp): [number, number][] {
 /** Convex pieces of a ramp (each a slab from the profile down to the ground), for the collider. */
 export function rampHulls(r: Ramp): number[][][] {
   const c = Math.cos(r.yaw), s = Math.sin(r.yaw);
-  const P = (u: number, y: number, v: number) => [r.x + c * u - s * v, y, r.z + s * u + c * v];
+  const y0 = r.y ?? 0;
+  const P = (u: number, y: number, v: number) => [r.x + c * u - s * v, y0 + y, r.z + s * u + c * v];
   const W = r.w / 2, prof = rampProfile(r);
   const hulls: number[][][] = [];
   for (let i = 0; i < prof.length - 1; i++) {
@@ -66,7 +67,8 @@ export function buildRamps(ramps: Ramp[]): THREE.Group {
   const side = new THREE.MeshLambertMaterial({ color: 0x8e979f, side: THREE.DoubleSide });
   for (const r of ramps) {
     const c = Math.cos(r.yaw), sn = Math.sin(r.yaw);
-    const P = (u: number, y: number, v: number) => [r.x + c * u - sn * v, y, r.z + sn * u + c * v];
+    const y0 = r.y ?? 0;
+    const P = (u: number, y: number, v: number) => [r.x + c * u - sn * v, y0 + y, r.z + sn * u + c * v];
     const W = r.w / 2, prof = rampProfile(r);
     const tp: number[] = [], uv: number[] = [], ti: number[] = [];
     const sp: number[] = [], si: number[] = [];
