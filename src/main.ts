@@ -446,7 +446,8 @@ async function start() {
   const camPos = new THREE.Vector3();
   const lookAt = new THREE.Vector3();
   let camPull = 1; // fraction of the camera distance left after walls and bridges pull it in
-  const fwd = new THREE.Vector3();
+  const fwd = new THREE.Vector3(1, 0, 0);
+  const camFwd = new THREE.Vector3(1, 0, 0);
   const tmp = new THREE.Vector3();
   let acc = 0;
   let last = performance.now();
@@ -583,7 +584,8 @@ async function start() {
           jump.yaw += (w.x * ux + w.y * upY + w.z * uz) * dt;
           jump.roll += (w.x * fx + w.y * fy + w.z * fz) * dt;
         } else {
-          if (stunts.air > 0.8 && upY > 0.7) landJump(cp, upY);
+          // (Faster than any car can fly = the car was moved, e.g. reset onto the road: no jump.)
+          if (stunts.air > 0.8 && upY > 0.7 && Math.hypot(cp.x - jump.x, cp.z - jump.z) < stunts.air * 90) landJump(cp, upY);
           stunts.air = 0;
           if (upY < -0.5) stunts.inverted = true;
           else if (upY > 0.9 && stunts.inverted) {
@@ -673,11 +675,16 @@ async function start() {
     syncModel(model, car);
     const p = car.body.translation();
     const r = car.body.rotation();
-    fwd.set(1 - 2 * (r.y * r.y + r.z * r.z), 0, 2 * (r.x * r.z - r.w * r.y)).normalize();
-    const desired = tmp.set(p.x, p.y, p.z).addScaledVector(fwd, -9);
-    desired.y = p.y + 4;
-    if (firstFrame) camPos.copy(desired);
-    camPos.lerp(desired, 1 - Math.exp(-dt * 4));
+    tmp.set(1 - 2 * (r.y * r.y + r.z * r.z), 0, 2 * (r.x * r.z - r.w * r.y));
+    if (tmp.lengthSq() > 0.01) fwd.copy(tmp.normalize());
+    // The camera stays a fixed distance behind the car at any speed: only its direction and
+    // height are smoothed (smoothing the position made it fall far behind when driving fast).
+    if (firstFrame) camFwd.copy(fwd);
+    camFwd.lerp(fwd, 1 - Math.exp(-dt * 5));
+    if (camFwd.lengthSq() < 1e-4) camFwd.copy(fwd);
+    camFwd.normalize();
+    const camY = p.y + 4;
+    camPos.set(p.x, firstFrame ? camY : camPos.y + (camY - camPos.y) * (1 - Math.exp(-dt * 6)), p.z).addScaledVector(camFwd, -9);
     camera.position.copy(camPos);
     // Keep the camera out of bridges, tunnels and walls: below any ceiling over the car, and in
     // front of anything solid between the car and the camera (only static things count).

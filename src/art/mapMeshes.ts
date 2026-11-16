@@ -235,6 +235,17 @@ function waterEdges(map: MapData) {
 
 /** Road and path pieces that cross water: these become bridge decks. */
 export function bridgeSegments(map: MapData, water: WaterMap, grid: RoadGrid) {
+  // Pieces of a bridge that lie over another street (a footbridge over a road) stay flat and plain.
+  const streetSegs: [number, number, number, number, number][] = [];
+  for (const r of map.roads)
+    if (r.drivable && !r.tunnel)
+      for (let i = 1; i < r.pts.length; i++) streetSegs.push([r.pts[i - 1][0], r.pts[i - 1][1], r.pts[i][0], r.pts[i][1], r.width / 2 + 2]);
+  const overStreet = (self: Road, x: number, z: number) =>
+    streetSegs.some(([ax, az, bx, bz, hw]) => {
+      if (Math.abs(x - ax) > 80 && Math.abs(x - bx) > 80) return false;
+      const dx = bx - ax, dz = bz - az, t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+      return Math.hypot(x - ax - dx * t, z - az - dz * t) < hw && !self.pts.some((p) => p[0] === ax && p[1] === az);
+    });
   const segs: { ax: number; az: number; bx: number; bz: number; width: number; culvert?: boolean; rails: [boolean, boolean]; drivable: boolean; cycle?: boolean }[] = [];
   for (const r of map.roads) {
     if (r.tunnel) continue;
@@ -245,7 +256,11 @@ export function bridgeSegments(map: MapData, water: WaterMap, grid: RoadGrid) {
         const x0 = ax + ((bx - ax) * k) / n, z0 = az + ((bz - az) * k) / n;
         const x1 = ax + ((bx - ax) * (k + 1)) / n, z1 = az + ((bz - az) * (k + 1)) / n;
         const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
-        if (water.contains(mx, mz) || r.bridge) {
+        // A tagged bridge only counts near water: in the game, a bridge over another street sits at
+        // street level, so its railings would stand across that street.
+        const ux = (bx - ax) / (Math.hypot(bx - ax, bz - az) || 1), uz = (bz - az) / (Math.hypot(bx - ax, bz - az) || 1);
+        const nearWater = () => [-12, -6, 6, 12].some((d) => water.contains(mx + ux * d, mz + uz * d));
+        if ((water.contains(mx, mz) || (r.bridge && nearWater())) && !(!r.drivable && overStreet(r, mx, mz))) {
           // Crossing only a narrow ditch: a culvert (flush, no railings).
           const culvert = !r.bridge && !water.inBigWater(mx, mz);
           const width = r.width + (culvert ? 1 : BRIDGE_EXTRA);

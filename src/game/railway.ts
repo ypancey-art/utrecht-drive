@@ -6,8 +6,10 @@ import type { MapData, Pt } from './mapData';
 
 export const RAIL_H = 4.5; // height of the track bed above the street
 const TOP = 2.2; // half width of the gravel top per track
-const SLOPE = 1.5; // horizontal metres per metre of height
+const SLOPE = 1.5; // horizontal metres per metre of height (next to streets and paths)
+const GENTLE = 3.2; // elsewhere the grass slope is gentle enough to drive up (about 17°)
 const FOOT = TOP + RAIL_H * SLOPE;
+const WIDE = TOP + RAIL_H * GENTLE;
 const DECK = 1.0; // bridge deck thickness
 const RES = 1; // grid spacing (m)
 const CLOSE = 3; // fill gaps between parallel tracks up to 2*CLOSE cells wide
@@ -151,19 +153,25 @@ export function buildDyke(map: MapData): Dyke {
     minZ = Math.min(minZ, s[1], s[3]); maxZ = Math.max(maxZ, s[1], s[3]);
   }
   if (!raised.length) return { pos: new Float32Array(), idx: new Uint32Array(), top: new Uint8Array(), walls: [], decks };
-  const pad = FOOT + CLOSE * RES + 2;
+  const pad = WIDE + CLOSE * RES + 2;
   const x0 = Math.floor(minX - pad), z0 = Math.floor(minZ - pad);
   const nx = Math.ceil((maxX + pad - x0) / RES) + 1, nz = Math.ceil((maxZ + pad - z0) / RES) + 1;
   const H = new Float32Array(nx * nz);
   const X = (i: number) => x0 + i * RES, Z = (j: number) => z0 + j * RES;
-  const profile = (d: number) => (d <= TOP ? RAIL_H : Math.max(0, RAIL_H - (d - TOP) / SLOPE));
+  const profile = (d: number, slope: number) => (d <= TOP ? RAIL_H : Math.max(0, RAIL_H - (d - TOP) / slope));
+  // Steep dyke everywhere (as before), plus a gentle grass slope that is only allowed to rise
+  // as far as it stays clear of streets and paths running alongside (it drops at the steep
+  // slope towards them), so cars can drive up onto the tracks without anything covering a road.
+  const G = new Float32Array(nx * nz);
   for (const s of raised) {
-    const i0 = Math.max(0, Math.floor((Math.min(s[0], s[2]) - FOOT - x0) / RES)), i1 = Math.min(nx - 1, Math.ceil((Math.max(s[0], s[2]) + FOOT - x0) / RES));
-    const j0 = Math.max(0, Math.floor((Math.min(s[1], s[3]) - FOOT - z0) / RES)), j1 = Math.min(nz - 1, Math.ceil((Math.max(s[1], s[3]) + FOOT - z0) / RES));
+    const i0 = Math.max(0, Math.floor((Math.min(s[0], s[2]) - WIDE - x0) / RES)), i1 = Math.min(nx - 1, Math.ceil((Math.max(s[0], s[2]) + WIDE - x0) / RES));
+    const j0 = Math.max(0, Math.floor((Math.min(s[1], s[3]) - WIDE - z0) / RES)), j1 = Math.min(nz - 1, Math.ceil((Math.max(s[1], s[3]) + WIDE - z0) / RES));
     for (let j = j0; j <= j1; j++)
       for (let i = i0; i <= i1; i++) {
-        const h = profile(segDist(X(i), Z(j), s));
-        if (h > H[j * nx + i]) H[j * nx + i] = h;
+        const d = segDist(X(i), Z(j), s), k = j * nx + i;
+        const h = profile(d, SLOPE), g = profile(d, GENTLE);
+        if (h > H[k]) H[k] = h;
+        if (g > G[k]) G[k] = g;
       }
   }
   // Morphological closing (max filter, then min filter) fills the dip between parallel tracks.
@@ -197,6 +205,68 @@ export function buildDyke(map: MapData): Dyke {
   };
   const closed = filter(filter(H, true), false);
   for (let k = 0; k < H.length; k++) H[k] = Math.max(H[k], closed[k]);
+  {
+    const REACH_G = RAIL_H * SLOPE; // beyond this a road no longer limits the slope
+    const RC = 16, roadCells = new Map<number, number[]>();
+    const sides: number[] = []; // ax, az, bx, bz, half width
+    const lines: [Pt[], number, boolean][] = [
+      ...map.roads.filter((r) => !r.bridge && !r.tunnel).map((r): [Pt[], number, boolean] => [r.pts, r.width / 2 + 1, false]),
+      ...map.waterways.map((w): [Pt[], number, boolean] => [w.pts, w.width / 2 + 1, false]),
+      ...map.water.map((w): [Pt[], number, boolean] => [[...w.pts, w.pts[0]], 1, true]),
+      ...map.buildings.map((b): [Pt[], number, boolean] => [[...b.pts, b.pts[0]], 1, true]),
+    ];
+    // Areas (water, buildings): points inside one get no gentle slope at all.
+    const areas = lines.filter((l) => l[2]).map(([pts]) => {
+      let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+      for (const [x, z] of pts) (a = Math.min(a, x)), (b = Math.min(b, z)), (c = Math.max(c, x)), (d = Math.max(d, z));
+      return { pts, box: [a, b, c, d] };
+    }).filter(({ box }) => box[2] > x0 && box[0] < x0 + nx * RES && box[3] > z0 && box[1] < z0 + nz * RES);
+    // Mark grid points inside an area (only where the gentle slope would add height).
+    const inside = new Uint8Array(nx * nz);
+    for (const { pts, box } of areas) {
+      const i0 = Math.max(0, Math.floor((box[0] - x0) / RES)), i1 = Math.min(nx - 1, Math.ceil((box[2] - x0) / RES));
+      const j0 = Math.max(0, Math.floor((box[1] - z0) / RES)), j1 = Math.min(nz - 1, Math.ceil((box[3] - z0) / RES));
+      for (let jj = j0; jj <= j1; jj++) {
+        const z = Z(jj);
+        // Crossings of this row with the polygon, then fill between pairs.
+        const xs: number[] = [];
+        for (let a = 0, b = pts.length - 1; a < pts.length; b = a++) {
+          const [xa, za] = pts[a], [xb, zb] = pts[b];
+          if (za > z !== zb > z) xs.push(((xb - xa) * (z - za)) / (zb - za) + xa);
+        }
+        xs.sort((p, q) => p - q);
+        for (let q = 0; q + 1 < xs.length; q += 2)
+          for (let ii = Math.max(i0, Math.ceil((xs[q] - x0) / RES)); ii <= Math.min(i1, Math.floor((xs[q + 1] - x0) / RES)); ii++) inside[jj * nx + ii] = 1;
+      }
+    }
+    for (const [pts, hw] of lines) {
+      for (let i = 1; i < pts.length; i++) {
+        const [ax, az] = pts[i - 1], [bx, bz] = pts[i], n = sides.length;
+        if (Math.max(ax, bx) < x0 - 20 || Math.min(ax, bx) > x0 + nx * RES + 20 || Math.max(az, bz) < z0 - 20 || Math.min(az, bz) > z0 + nz * RES + 20) continue;
+        sides.push(ax, az, bx, bz, hw);
+        const pad = hw + REACH_G;
+        for (let cx = Math.floor((Math.min(ax, bx) - pad) / RC); cx <= Math.floor((Math.max(ax, bx) + pad) / RC); cx++)
+          for (let cz = Math.floor((Math.min(az, bz) - pad) / RC); cz <= Math.floor((Math.max(az, bz) + pad) / RC); cz++)
+            (roadCells.get(cx * 4096 + cz) ?? roadCells.set(cx * 4096 + cz, []).get(cx * 4096 + cz)!).push(n);
+      }
+    }
+    for (let j = 0; j < nz; j++)
+      for (let i = 0; i < nx; i++) {
+        const k = j * nx + i;
+        if (G[k] <= H[k]) continue;
+        const x = X(i), z = Z(j);
+        let d = REACH_G;
+        for (const n of roadCells.get(Math.floor(x / RC) * 4096 + Math.floor(z / RC)) ?? []) {
+          const ax = sides[n], az = sides[n + 1], dx = sides[n + 2] - ax, dz = sides[n + 3] - az, l2 = dx * dx + dz * dz || 1;
+          const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / l2));
+          const e = Math.hypot(x - ax - dx * t, z - az - dz * t) - sides[n + 4];
+          if (e < d) d = e;
+        }
+        if (inside[k]) continue;
+        // Roads crossing the dyke get an opening anyway: only roads alongside should limit it.
+        H[k] = Math.max(H[k], Math.min(G[k], Math.max(0, d) / SLOPE));
+      }
+  }
 
   // ---- openings: grid points inside one are cut; those next to the edge are moved onto it.
   const cut = new Uint8Array(nx * nz);
