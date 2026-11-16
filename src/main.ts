@@ -35,6 +35,7 @@ import { palette } from './art/palette';
 import { t, getLang, setLang, onLangChange } from './i18n';
 import { isOpen, startScreen, mathGate, dialog, toast } from './ui/ui';
 import { openGarage } from './ui/garage';
+import { Minimap } from './ui/minimap';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const loadingEl = $('loading');
@@ -203,6 +204,16 @@ async function start() {
     }
   };
   for (const id of progress.built) addBuilt(id);
+  const minimap = new Minimap(map);
+  minimap.addRamps(freeRamps);
+  minimap.addLoops(freeLoops);
+  document.body.appendChild(minimap.el);
+  for (const id of progress.built) addToMinimap(id);
+  function addToMinimap(id: string) {
+    minimap.addRamps((map.ramps ?? []).filter((r) => r.build === id));
+    minimap.addLoops((map.loops ?? []).filter((l) => l.build === id));
+    minimap.addTracks((map.tracks ?? []).filter((t) => t.id === id));
+  }
   const catalogue = buildCatalogue(map);
   mark('physics');
   const graph = new RoadGraph(map);
@@ -371,7 +382,10 @@ async function start() {
           buildPlayer();
         });
       } else if (choice === 'build') {
-        const go = await openBuilder(progress, catalogue, (it) => addBuilt(it.id));
+        const go = await openBuilder(progress, catalogue, (it) => {
+          addBuilt(it.id);
+          addToMinimap(it.id);
+        });
         save();
         if (go) {
           guide = go;
@@ -438,19 +452,42 @@ async function start() {
   let last = performance.now();
   let flippedTime = 0;
   const stunts = { air: 0, inverted: false, fast: 0, recordDirty: false, lastSave: 0 };
+  // One jump: where it took off, how high it went and how far the car turned on each axis.
+  const jump = { x: 0, z: 0, y0: 0, top: 0, pitch: 0, yaw: 0, roll: 0 };
   let stuntTimer = 0;
-  const stunt = (key: Parameters<typeof t>[0], pts: number) => {
+  const stunt = (key: Parameters<typeof t>[0], pts: number, list = '', big = false) => {
     progress.points += pts;
     save();
     sound.coin();
-    stuntEl.textContent = t(key, { p: pts });
+    if (big) window.setTimeout(() => sound.coin(), 140);
+    stuntEl.textContent = t(key, { p: pts, list });
+    stuntEl.classList.toggle('big', big);
     stuntEl.classList.add('show');
     pointsEl.classList.add('bump');
     clearTimeout(stuntTimer);
     stuntTimer = window.setTimeout(() => {
       stuntEl.classList.remove('show');
       pointsEl.classList.remove('bump');
-    }, 1400);
+    }, big ? 2600 : 1400);
+  };
+  /** Landing after a jump: air time, plus bonuses for cool jumps (far, high, flips, spins, rolls). */
+  const landJump = (cp: { x: number; y: number; z: number }, upY: number) => {
+    const roof = cp.y > 2.5;
+    let pts = Math.min(30, Math.round(stunts.air * 5)) + (roof ? 5 : 0);
+    const tricks: string[] = [];
+    const turns = (a: number) => Math.floor(Math.abs(a) / (Math.PI * 2) + 0.2); // 290° counts as a full turn
+    const times = (n: number) => (n > 1 ? ` ×${n}` : '');
+    const dist = Math.hypot(cp.x - jump.x, cp.z - jump.z), high = jump.top - Math.max(jump.y0, 0);
+    const flips = turns(jump.pitch), spins = turns(jump.yaw), rolls = turns(jump.roll);
+    if (flips) { tricks.push(t('trickFlip') + times(flips)); pts += 30 * flips; }
+    if (rolls) { tricks.push(t('trickRoll') + times(rolls)); pts += 30 * rolls; }
+    if (spins) { tricks.push(`${360 * spins}°`); pts += 20 * spins; }
+    if (dist > 40) { tricks.push(t('trickFar')); pts += 20; }
+    else if (dist > 25) { tricks.push(t('trickLong')); pts += 10; }
+    if (high > 6) { tricks.push(t('trickHigh')); pts += 10; }
+    if (tricks.length && upY > 0.93) { tricks.push(t('trickLanding')); pts += 10; }
+    if (tricks.length) stunt('stuntCombo', pts, tricks.join(' + '), true);
+    else stunt(roof ? 'stuntRoof' : 'stuntAir', pts);
   };
   let streetTimer = 0;
   let firstFrame = true;
@@ -533,12 +570,20 @@ async function start() {
       if (!car.sinking) {
         const q = car.body.rotation();
         const upY = 1 - 2 * (q.x * q.x + q.z * q.z);
-        if (!car.grounded) stunts.air += dt;
-        else {
-          if (stunts.air > 0.8 && upY > 0.7) {
-            const pts = Math.min(30, Math.round(stunts.air * 5));
-            stunt(cp.y > 2.5 ? 'stuntRoof' : 'stuntAir', cp.y > 2.5 ? pts + 5 : pts);
-          }
+        if (!car.grounded) {
+          if (stunts.air === 0) Object.assign(jump, { x: cp.x, z: cp.z, y0: cp.y, top: cp.y, pitch: 0, yaw: 0, roll: 0 });
+          stunts.air += dt;
+          jump.top = Math.max(jump.top, cp.y);
+          // Turning in the car's own frame: sideways axis = flips, up = spins, forward = barrel rolls.
+          const w = car.body.angvel();
+          const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fy = 2 * (q.x * q.y + q.w * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
+          const ux = 2 * (q.x * q.y - q.w * q.z), uz = 2 * (q.y * q.z + q.w * q.x);
+          const rx = 2 * (q.x * q.z + q.w * q.y), ry = 2 * (q.y * q.z - q.w * q.x), rz = 1 - 2 * (q.x * q.x + q.y * q.y);
+          jump.pitch += (w.x * rx + w.y * ry + w.z * rz) * dt;
+          jump.yaw += (w.x * ux + w.y * upY + w.z * uz) * dt;
+          jump.roll += (w.x * fx + w.y * fy + w.z * fz) * dt;
+        } else {
+          if (stunts.air > 0.8 && upY > 0.7) landJump(cp, upY);
           stunts.air = 0;
           if (upY < -0.5) stunts.inverted = true;
           else if (upY > 0.9 && stunts.inverted) {
@@ -571,6 +616,7 @@ async function start() {
         const q = car.body.rotation();
         const hx = 1 - 2 * (q.y * q.y + q.z * q.z), hz = 2 * (q.x * q.z - q.w * q.y);
         people.update(dt, cp.x, cp.z, car.sinking ? 0 : car.speed, Math.atan2(hz, hx));
+        if (frameNo % 2 === 0) minimap.draw(cp.x, cp.z, Math.atan2(hz, hx));
       }
 
       // Police: chase, escape or caught.
@@ -758,7 +804,7 @@ async function start() {
   }
 
   // Handy for debugging in the browser console.
-  (window as unknown as { game: unknown }).game = { renderer, people, car: () => car, world, map, scene, camera, police, runner, progress, traffic, addBuilt };
+  (window as unknown as { game: unknown }).game = { renderer, people, car: () => car, world, map, scene, camera, police, runner, progress, traffic, addBuilt, minimap };
 }
 
 start().catch((err) => {

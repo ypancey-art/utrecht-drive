@@ -121,6 +121,24 @@ export class Car {
       this.vehicle.setWheelSideFrictionStiffness(i, input.handbrake && !front ? 0.35 : 1);
     }
     this.vehicle.updateVehicle(dt);
+    if (input.handbrake && !this.grounded) this.airTrick(input, dt);
+  }
+
+  /**
+   * Tricks in the air (handbrake held): gas/brake flip the car forward/backward, left/right spin it.
+   * Without the handbrake nothing changes, so a normal jump flies straight.
+   */
+  private airTrick(input: DriveInput, dt: number) {
+    const q = this.body.rotation(), w = this.body.angvel();
+    // The car's own sideways (z) and up (y) axes in the world.
+    const rx = 2 * (q.x * q.z + q.w * q.y), ry = 2 * (q.y * q.z - q.w * q.x), rz = 1 - 2 * (q.x * q.x + q.y * q.y);
+    const ux = 2 * (q.x * q.y - q.w * q.z), uy = 1 - 2 * (q.x * q.x + q.z * q.z), uz = 2 * (q.y * q.z + q.w * q.x);
+    const MAX = 5, ACC = 14 * dt;
+    // Gas = nose down (front flip) = negative turn about the sideways axis; right = negative turn about up.
+    const pitchNow = w.x * rx + w.y * ry + w.z * rz, yawNow = w.x * ux + w.y * uy + w.z * uz;
+    const dp = input.throttle ? Math.max(-ACC, Math.min(ACC, -input.throttle * MAX - pitchNow)) : 0;
+    const dy = input.steer ? Math.max(-ACC, Math.min(ACC, -input.steer * MAX - yawNow)) : 0;
+    this.body.setAngvel({ x: w.x + rx * dp + ux * dy, y: w.y + ry * dp + uy * dy, z: w.z + rz * dp + uz * dy }, true);
   }
 
   /** Sinking in water: physics off, the car drifts, tips nose-down and goes under. */

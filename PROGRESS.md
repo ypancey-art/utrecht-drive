@@ -137,3 +137,8 @@ Known gaps / next steps:
   Falls back to the block people if loading fails.
 - Note: Chrome-extension screenshots right after a page load sometimes show a flipped, stale
   frame; take a second screenshot.
+
+## Minimap + jump tricks (2026-11-16)
+- `src/ui/minimap.ts`: round minimap (bottom-left; top-right on touch), turns with the car. Streets/water/parks pre-drawn once to a 1500 px canvas. Ramps (orange wedge pointing to the lip), loops (orange ring) and built tracks (orange line + flag) in orange; the 6 nearest out-of-view ones show as dots on the rim. Built items are added via `addToMinimap(id)`.
+- Air tricks: hold Space (handbrake) in the air + arrows: up/down = front/back flip, left/right = spin (`Car.airTrick`). Without Space a jump flies as before (tests unchanged). Touch: orange 🌀 button = handbrake.
+- Jump bonuses on landing (`landJump` in main.ts): flip/roll +30 each, 360° spin +20 each, long (>25 m) +10, mega (>40 m) +20, high (>6 m) +10, perfect landing +10. Shown as a big orange combo text.

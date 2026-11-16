@@ -101,3 +101,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9ec9e8; fon
 .build-icon { font-size: 22px; }
 .build-text { flex: 1; min-width: 0; }
 .build-name { font-weight: 700; }
+
+/* --- minimap and jump tricks --- */
+#minimap { position: fixed; left: 16px; bottom: 16px; width: 170px; height: 170px; border-radius: 50%; pointer-events: none; box-shadow: 0 3px 12px rgba(0,0,0,0.45); }
+.touch-device #minimap { left: auto; right: 16px; bottom: auto; top: 84px; width: 130px; height: 130px; }
+@media (max-width: 600px) { #minimap { width: 120px; height: 120px; } }
+#stunt.big { color: #ffb347; font-size: 24px; }
+.pad .trick { background: rgba(230, 120, 30, 0.7); width: 64px; height: 64px; font-size: 26px; align-self: flex-end; }
