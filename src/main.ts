@@ -806,7 +806,7 @@ async function start() {
         toast(t('failed'));
         refreshMarkers();
       }
-      if (!runner.active && !busy && !car.sinking) {
+      if (!runner.active && !busy && !car.sinking && cp.y < 3) { // not while up on a track or roof
         const m = runner.atStart(cp.x, cp.z);
         if (m) askMission(m);
       }
