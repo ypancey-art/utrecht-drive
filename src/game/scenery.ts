@@ -2,7 +2,7 @@
 // and deterministic (seeded), so every player sees the same Overvecht.
 import type { MapData, Pt } from './mapData';
 import { WaterMap } from './water';
-import { trackSections } from './loops';
+import { loopSections, trackSections } from './loops';
 
 /** kind: 0 round, 1 narrow, 2 conifer, 3 willow (wide, weeping). h = height, crown = crown diameter (m). */
 export interface Tree { x: number; z: number; h: number; crown: number; kind: 0 | 1 | 2 | 3 }
@@ -137,6 +137,23 @@ function scatter(area: { pts: Pt[] }[], perM2: number, rand: () => number, out: 
   }
 }
 
+/** Position hash in [0, 1): deterministic, independent of placement order. */
+const hash01 = (x: number, z: number) => {
+  const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+};
+
+/** Removes a share of the trees, mostly small ones: the lowest by height (with a little jitter,
+ *  so not every young tree goes). Big old trees always stay. */
+function thinOut(trees: Tree[], share: number) {
+  const score = (t: Tree) => t.h * (0.75 + 0.5 * hash01(t.x, t.z));
+  const n = Math.round(trees.length * share);
+  const drop = new Set(trees.map((t) => [score(t), t] as const).sort((a, b) => a[0] - b[0]).slice(0, n).map(([, t]) => t));
+  let w = 0;
+  for (const t of trees) if (!drop.has(t)) trees[w++] = t;
+  trees.length = w;
+}
+
 export function placeScenery(map: MapData) {
   const rand = rng(1974);
   const grid = new RoadGrid(map);
@@ -167,14 +184,24 @@ export function placeScenery(map: MapData) {
     }
     return best;
   };
-  // Hot Wheels tracks: points along them (x, y, z) in 10 m buckets, to keep trees and lamps away.
+  // Hot Wheels tracks and loops: points along them (x, y, z) in 10 m buckets, to keep trees and lamps away.
   const trackPts = new Map<number, number[][]>();
-  for (const t of map.tracks ?? [])
-    for (const secs of trackSections(t))
-      for (const { p } of secs) {
-        const k = Math.floor(p[0] / 10) * 4096 + Math.floor(p[2] / 10);
-        (trackPts.get(k) ?? trackPts.set(k, []).get(k)!).push(p);
-      }
+  const sections = [...(map.tracks ?? []).flatMap(trackSections), ...(map.loops ?? []).map(loopSections)];
+  for (const secs of sections)
+    for (const { p } of secs) {
+      const k = Math.floor(p[0] / 10) * 4096 + Math.floor(p[2] / 10);
+      (trackPts.get(k) ?? trackPts.set(k, []).get(k)!).push(p);
+    }
+  /** Is (x, z) within `margin` of a jump ramp, its run-up (12 m) or its landing (15 m)? */
+  const ramps = map.ramps ?? [];
+  const onRamp = (x: number, z: number, margin: number) =>
+    ramps.some((r) => {
+      const dx = x - r.x, dz = z - r.z;
+      if (Math.abs(dx) > 60 || Math.abs(dz) > 60) return false;
+      const c = Math.cos(r.yaw), s = Math.sin(r.yaw);
+      const u = dx * c + dz * s, v = -dx * s + dz * c;
+      return u > -r.len / 2 - 12 - margin && u < r.len / 2 + 15 + margin && Math.abs(v) < r.w / 2 + 1.5 + margin;
+    });
   /** Is a thing of radius r and height h at (x, z) in the way of a track? */
   const onTrack = (x: number, z: number, r: number, h: number) => {
     if (!trackPts.size) return false;
@@ -189,6 +216,7 @@ export function placeScenery(map: MapData) {
   const add = (t: Tree) => {
     if (water.contains(t.x, t.z)) return;
     if (onTrack(t.x, t.z, t.crown / 2, t.h)) return;
+    if (onRamp(t.x, t.z, t.crown / 4)) return;
     const wall = walls.wallDistance(t.x, t.z);
     if (wall < 0.4) return;
     const rail = railDistance(t.x, t.z);
@@ -212,6 +240,7 @@ export function placeScenery(map: MapData) {
     const kind = r < 0.7 ? 0 : r < 0.85 ? 1 : 2;
     add({ x, z, h, crown: h * (kind === 0 ? 0.6 : 0.4), kind });
   }
+  thinOut(trees, 0.3);
 
   // Street lights on one side of the bigger named roads, about every 35 m.
   const lamps: Lamp[] = [];
