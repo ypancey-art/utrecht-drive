@@ -426,7 +426,8 @@ for (const c of cands) {
   if (!r1.ok || !r2?.ok) continue;
   chosen.push(c);
 }
-map.tracks = chosen.map((c, i) => ({ ...c.track, id: `track${i + 1}` }));
+// Keep the tracks made by the other scripts (Spoorlus, the bt- tracks of place-building-tracks).
+map.tracks = [...chosen.map((c, i) => ({ ...c.track, id: `track${i + 1}` })), ...(map.tracks ?? []).filter((t) => !/^track\d+$/.test(t.id))];
 console.log(`${map.tracks.length} tracks:`, map.tracks.map((t) => `${t.id} ${t.name} (${t.through.length} through)`).join(', '));
 delete (map as Partial<MapData>).lod3d;
 writeFileSync(DATA, JSON.stringify(map));

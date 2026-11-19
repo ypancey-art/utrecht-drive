@@ -160,21 +160,20 @@ export function driveTrack({ world }: Pick<World, 'world'>, t: Track, carId: str
     const ang = Math.atan2(fx * (tg[2] - p.z) - fz * (tg[0] - p.x), fx * (tg[0] - p.x) + fz * (tg[2] - p.z));
     const inLoop = loops.findIndex((lp) => Math.hypot(p.x - lp.x, p.z - lp.z) < 20 && p.y > (lp.y ?? 0) - 1);
     // `ease`: like a player, lift off the throttle when going too fast for a bend coming up
-    // (the next 50 m). Otherwise full throttle all the way.
+    // (the next 120 m): no gas above the speed that bend allows (no braking: a sliding car spins).
+    // Otherwise full throttle all the way.
     let throttle = 1;
     if (opts.ease && inLoop < 0) {
-      let kMax = 0, dd = 0, kHere = 0;
-      for (let j = best + 1; j < all.length - 1 && dd < 50; j++) {
+      let kMax = 0, dd = 0;
+      for (let j = best + 1; j < all.length - 1 && dd < 120; j++) {
         const a0 = Math.atan2(all[j][2] - all[j - 1][2], all[j][0] - all[j - 1][0]), a1 = Math.atan2(all[j + 1][2] - all[j][2], all[j + 1][0] - all[j][0]);
         const seg = Math.hypot(all[j + 1][0] - all[j][0], all[j + 1][2] - all[j][2]);
         dd += seg;
         const kk = seg > 0.5 ? Math.abs(Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0))) / seg : 0;
         kMax = Math.max(kMax, kk);
-        if (dd < 8) kHere = Math.max(kHere, kk);
       }
-      const vMax = kMax > 0 ? Math.sqrt(EASE_ACC / kMax) : Infinity, sp = Math.hypot(v.x, v.z);
-      // Brake (in pulses, like ABS, so the wheels don't lock) only on the straight before it.
-      throttle = sp > vMax * 1.1 && kHere < 0.02 && i % 3 === 0 ? -1 : sp > vMax ? 0 : 1;
+      const vMax = kMax > 0 ? Math.sqrt(EASE_ACC / kMax) : Infinity;
+      if (Math.hypot(v.x, v.z) > vMax) throttle = 0;
     }
     car.update({ throttle, steer: inLoop >= 0 || upY < 0.7 ? 0 : Math.max(-1, Math.min(1, ang * 2)), handbrake: false }, world.timestep);
     world.step();

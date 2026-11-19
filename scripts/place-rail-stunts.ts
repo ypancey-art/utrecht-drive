@@ -16,7 +16,7 @@ import { rampHulls } from '../src/art/rampMeshes';
 const DATA = 'public/data/overvecht.json';
 const map: MapData = JSON.parse(readFileSync(DATA, 'utf8'));
 map.ramps = (map.ramps ?? []).filter((r) => r.kind !== 'rail'); // safe to run again
-map.tracks = (map.tracks ?? []).filter((t) => !t.free);
+map.tracks = (map.tracks ?? []).filter((t) => t.id !== 'railLoop'); // (keeps the other scripts' tracks)
 
 const LR = 7, LD = 8.5; // loop radius and sideways offset (as the other tracks)
 const inMap = (x: number, z: number) => Math.abs(x) < 680 && Math.abs(z) < 680;

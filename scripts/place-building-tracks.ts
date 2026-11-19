@@ -11,7 +11,7 @@
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync } from 'node:fs';
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { MapData, Track, Loop } from '../src/game/mapData';
-import { loopAt, loopExit, loopSections, trackPosts, LOOP_W, type V3 } from '../src/game/loops';
+import { loopAt, loopEntry, loopExit, loopSections, trackPosts, LOOP_W, type V3 } from '../src/game/loops';
 import { buildWorld, loadMapData, driveTrack } from '../tests/world';
 import { addTrackPhysics } from '../src/game/mapPhysics';
 
@@ -20,10 +20,11 @@ const PREFIX = 'bt-';
 mkdirSync('scripts/cache', { recursive: true });
 copyFileSync(DATA, 'scripts/cache/overvecht.before-building-tracks.json');
 const map: MapData = JSON.parse(readFileSync(DATA, 'utf8'));
-map.tracks = (map.tracks ?? []).filter((t) => !t.id.startsWith(PREFIX));
 // Optional: only some kinds ("roof spiral canal gap double"), and --dry to not write the result.
 const DRY = process.argv.includes('--dry');
 const ONLY = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+// Drop our own tracks (only those of the kinds being placed again, if kinds are given).
+map.tracks = (map.tracks ?? []).filter((t) => !t.id.startsWith(PREFIX) || (ONLY.length > 0 && !ONLY.includes(t.id.slice(PREFIX.length).replace(/\d+$/, ""))));
 
 const W = LOOP_W; // track width
 const LR = 7, LD = 8.5; // loop radius and sideways offset (as the other tracks)
@@ -84,6 +85,12 @@ for (const r of map.ramps ?? []) {
   fillLine([r.x - ux * (r.len / 2 + 40), r.z - uz * (r.len / 2 + 40)], [r.x + ux * (r.len / 2 + 30), r.z + uz * (r.len / 2 + 30)], 7, keepRamp);
 }
 for (const l of map.loops ?? []) for (const { p } of loopSections(l)) fillLine([p[0], p[2]], [p[0], p[2]], 14, keep);
+// ... and the straight run-up to each loop (the loop test drives in from 45 m back) and its run-out.
+for (const l of map.loops ?? []) {
+  const e = loopEntry(l), x = loopExit(l);
+  fillLine([e.x - e.dirX * 55, e.z - e.dirZ * 55], [e.x, e.z], 7, keep);
+  fillLine([x.x, x.z], [x.x + x.dirX * 25, x.z + x.dirZ * 25], 7, keep);
+}
 function keepOff(t: Track) {
   for (const part of t.parts) {
     if (part.kind === 'loop') for (const { p } of loopSections(part.loop)) fillLine([p[0], p[2]], [p[0], p[2]], 12, keep);
@@ -779,7 +786,7 @@ const tpls: Tpl[] = [
     score: () => 0,
   },
   {
-    kind: 'double', name: 'Dubbele looping', free: false,
+    kind: 'double', name: 'Dubbele looping', free: true,
     // Up, two loops in a row high in the air, a banked bend and back down.
     variants: () => {
       const out: { t: Track; tag: string }[] = [];
@@ -847,7 +854,7 @@ for (const tpl of tpls) {
   let tested = 0;
   for (const c of cands) {
     if (tested >= 30) break;
-    if (!farFromOthers(c.t, 220)) continue;
+    if (!farFromOthers(c.t, 90)) continue; // (the keep-out raster already keeps them apart)
     if (check(c.t, false)) continue; // (the tracks chosen so far are in the keep-out raster now)
     tested++;
     const err = drive(c.t);
