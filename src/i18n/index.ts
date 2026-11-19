@@ -90,15 +90,15 @@ const nl = {
   missions: 'Missies',
   done: 'gedaan',
   together: '👫 Samen spelen',
-  togetherInfo: 'Rij samen met vrienden door Overvecht, elk op een eigen computer of tablet. Eén kind start een kamer en krijgt een code; de anderen typen die code in.',
+  togetherInfo: 'Rij samen met vrienden door Overvecht, elk op een eigen computer of tablet. Eén kind start een kamer en krijgt een code; de anderen typen die code in. Alleen je bijnaam, je auto en waar je rijdt in het spel worden gedeeld (versleuteld, via een gratis server op internet).',
   yourName: 'Jouw naam:',
   newName: 'Andere naam',
   hostRoom: 'Kamer starten',
-  hostInfo: 'Je krijgt een code van 4 letters. Geef die aan je vrienden.',
+  hostInfo: 'Je krijgt een geheime code van 6 tekens. Geef die aan je vrienden.',
   joinRoom: 'Meedoen',
   connecting: 'Verbinden…',
   roomOpen: 'Kamer {code}',
-  roomOpenBody: 'Je kamer is open! Vertel je vrienden de code:\n\n{code}\n\nZij kiezen in het menu "Samen spelen" → "Meedoen". Er kunnen 8 spelers in een kamer.',
+  roomOpenBody: 'Je kamer is open! Vertel je vrienden de code:\n\n{code}\n\nZij kiezen in het menu "Samen spelen" → "Meedoen". Er kunnen 8 spelers in een kamer. Alleen wie de code heeft, kan meedoen.',
   joinedRoom: 'Je rijdt mee in kamer {code}!',
   playerJoined: '👋 {name} doet mee',
   playerLeft: '{name} is weg',
@@ -108,6 +108,7 @@ const nl = {
   netError: 'Verbinden lukt niet. Zit je op internet? Op sommige school-netwerken werkt samen spelen niet.',
   leaveRoom: 'Kamer {code} verlaten',
   inRoom: 'Kamer {code} · {n} spelers',
+  stuntBy: '🔥 {name}: stunt! +{p} ⚡',
 };
 type Dict = Record<keyof typeof nl, string>;
 const en: Dict = {
@@ -201,15 +202,15 @@ const en: Dict = {
   missions: 'Missions',
   done: 'done',
   together: '👫 Play together',
-  togetherInfo: 'Drive around Overvecht with friends, each on their own computer or tablet. One player starts a room and gets a code; the others type in that code.',
+  togetherInfo: 'Drive around Overvecht with friends, each on their own computer or tablet. One player starts a room and gets a code; the others type in that code. Only your nickname, your car and where you drive in the game are shared (encrypted, through a free server on the internet).',
   yourName: 'Your name:',
   newName: 'Other name',
   hostRoom: 'Start a room',
-  hostInfo: 'You get a 4-letter code. Give it to your friends.',
+  hostInfo: 'You get a secret 6-character code. Give it to your friends.',
   joinRoom: 'Join',
   connecting: 'Connecting…',
   roomOpen: 'Room {code}',
-  roomOpenBody: 'Your room is open! Tell your friends the code:\n\n{code}\n\nThey choose "Play together" → "Join" in the menu. A room holds 8 players.',
+  roomOpenBody: 'Your room is open! Tell your friends the code:\n\n{code}\n\nThey choose "Play together" → "Join" in the menu. A room holds 8 players. Only people with the code can join.',
   joinedRoom: 'You joined room {code}!',
   playerJoined: '👋 {name} joined',
   playerLeft: '{name} left',
@@ -219,6 +220,7 @@ const en: Dict = {
   netError: 'Could not connect. Are you online? Playing together does not work on some school networks.',
   leaveRoom: 'Leave room {code}',
   inRoom: 'Room {code} · {n} players',
+  stuntBy: '🔥 {name}: stunt! +{p} ⚡',
 };
 const dictionaries = { nl, en };
 const GRADE_NAMES = {

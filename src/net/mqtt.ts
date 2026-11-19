@@ -27,6 +27,7 @@ export class Mqtt {
   onClose: () => void = () => {};
   private ws: WebSocket;
   private buf = new Uint8Array(0);
+  private skip = 0; // bytes of an oversized packet still to drop
   private ping = 0;
   private nextId = 1;
   private acks = new Map<number, () => void>();
@@ -97,6 +98,13 @@ export class Mqtt {
 
   /** Splits the byte stream into packets. */
   private receive(data: Uint8Array, first?: (type: number, body: Uint8Array) => void) {
+    // Still dropping the rest of an oversized packet?
+    if (this.skip > 0) {
+      const n = Math.min(this.skip, data.length);
+      this.skip -= n;
+      data = data.subarray(n);
+      if (!data.length) return;
+    }
     const all = new Uint8Array(this.buf.length + data.length);
     all.set(this.buf);
     all.set(data, this.buf.length);
@@ -113,7 +121,19 @@ export class Mqtt {
         mul *= 128;
         if (!(d & 128)) break;
       }
-      if (j < 0 || j + len > all.length) break;
+      if (j < 0) break;
+      if (len > 8192) {
+        // Nothing in this game is that big: skip it without keeping it in memory.
+        const end = j + len;
+        if (end <= all.length) {
+          i = end;
+          continue;
+        }
+        this.skip = end - all.length;
+        this.buf = new Uint8Array(0);
+        return;
+      }
+      if (j + len > all.length) break;
       const type = all[i], body = all.subarray(j, j + len);
       if (first) first(type, body);
       this.handle(type, body);
@@ -125,6 +145,7 @@ export class Mqtt {
   private handle(type: number, body: Uint8Array) {
     const kind = type & 0xf0;
     if (kind === 0x30) {
+      if (body.length > 4096) return; // game messages are small; ignore anything big
       const tl = (body[0] << 8) | body[1];
       const topic = dec.decode(body.subarray(2, 2 + tl));
       const qos = (type >> 1) & 3;

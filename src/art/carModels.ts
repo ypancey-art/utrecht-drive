@@ -243,3 +243,12 @@ export function buildCarModel(spec: CarSpec, paint = 0, opts: { police?: boolean
     flash,
   };
 }
+
+/** Frees a car model's own materials (geometry and textures are shared with the car pack). */
+export function disposeCarModel(model: CarModel) {
+  for (const root of [model.body, ...model.wheels])
+    root.traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.dispose();
+    });
+}

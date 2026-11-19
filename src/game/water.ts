@@ -1,6 +1,8 @@
 import type { MapData, Pt } from './mapData';
 
-type Poly = { pts: Pt[]; minX: number; maxX: number; minZ: number; maxZ: number };
+// edgeCells: grid cells an edge passes through; inside: cached answer for the other cells (a cell
+// no edge crosses is entirely inside or entirely outside, so one test per cell is enough).
+type Poly = { pts: Pt[]; minX: number; maxX: number; minZ: number; maxZ: number; edgeCells: Set<number>; inside: Map<number, boolean> };
 type Line = { ax: number; az: number; bx: number; bz: number; hw: number };
 type Deck = { ax: number; az: number; bx: number; bz: number; width: number };
 
@@ -31,7 +33,13 @@ export class WaterMap {
   constructor(map: MapData) {
     for (const { pts } of map.water) {
       const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
-      const p = { pts, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) };
+      const p: Poly = { pts, minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs), edgeCells: new Set(), inside: new Map() };
+      // Cells touched by an edge (bounding box of each edge, plus a cell around it to be safe).
+      for (let i = 0; i < pts.length; i++) {
+        const [ax, az] = pts[i], [bx, bz] = pts[(i + 1) % pts.length];
+        for (let cx = Math.floor(Math.min(ax, bx) / CELL) - 1; cx <= Math.floor(Math.max(ax, bx) / CELL) + 1; cx++)
+          for (let cz = Math.floor(Math.min(az, bz) / CELL) - 1; cz <= Math.floor(Math.max(az, bz) / CELL) + 1; cz++) p.edgeCells.add(ck(cx, cz));
+      }
       bucket(this.polys, p, p.minX, p.minZ, p.maxX, p.maxZ);
     }
     for (const w of map.waterways) {
@@ -56,6 +64,19 @@ export class WaterMap {
     return grid.get(ck(Math.floor(x / CELL), Math.floor(z / CELL))) ?? (WaterMap.none as T[]);
   }
 
+  /** Point in polygon, with the per-cell shortcut. */
+  private static inPoly(x: number, z: number, p: Poly) {
+    if (x < p.minX || x > p.maxX || z < p.minZ || z > p.maxZ) return false;
+    const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL), k = ck(cx, cz);
+    if (p.edgeCells.has(k)) return WaterMap.pip(x, z, p.pts);
+    let v = p.inside.get(k);
+    if (v === undefined) {
+      v = WaterMap.pip((cx + 0.5) * CELL, (cz + 0.5) * CELL, p.pts);
+      p.inside.set(k, v);
+    }
+    return v;
+  }
+
   private static pip(x: number, z: number, pts: Pt[]) {
     let inside = false;
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -74,7 +95,7 @@ export class WaterMap {
   /** In a pond/canal area or a waterway wider than a ditch (not just a ditch). */
   inBigWater(x: number, z: number) {
     for (const l of this.cell(this.lines, x, z)) if (l.hw > 2.5 && WaterMap.lineDist(x, z, l) < l.hw) return true;
-    for (const p of this.cell(this.polys, x, z)) if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && WaterMap.pip(x, z, p.pts)) return true;
+    for (const p of this.cell(this.polys, x, z)) if (WaterMap.inPoly(x, z, p)) return true;
     return false;
   }
 
@@ -84,7 +105,7 @@ export class WaterMap {
       const s = Math.max(0, Math.min(1, ((x - d.ax) * dx + (z - d.az) * dz) / l2));
       if (Math.hypot(x - d.ax - dx * s, z - d.az - dz * s) < d.width / 2 + 0.3) return false;
     }
-    for (const p of this.cell(this.polys, x, z)) if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && WaterMap.pip(x, z, p.pts)) return true;
+    for (const p of this.cell(this.polys, x, z)) if (WaterMap.inPoly(x, z, p)) return true;
     for (const l of this.cell(this.lines, x, z)) if (WaterMap.lineDist(x, z, l) < l.hw) return true;
     return false;
   }

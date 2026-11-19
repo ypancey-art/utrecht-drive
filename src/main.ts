@@ -29,16 +29,18 @@ import { CARS, POLICE, carById, upgradedStats, armourFactor } from './game/cars'
 import { GRADES, loadProgress, saveProgress, upgradesFor } from './game/progress';
 import { buildMapMeshes, bridgeSegments } from './art/mapMeshes';
 import { buildTrees, buildLamps, buildGreenery } from './art/sceneryMeshes';
-import { buildCarModel, loadCarAssets, type CarModel } from './art/carModels';
+import { buildCarModel, loadCarAssets, disposeCarModel, type CarModel } from './art/carModels';
+import { viewer, distToViewer, shadowSwitch, CAR_HIDE, CAR_SHADOW } from './art/lod';
 import { beam } from './art/markers';
 import { palette } from './art/palette';
 import { t, getLang, setLang, onLangChange } from './i18n';
 import { isOpen, startScreen, mathGate, dialog, toast } from './ui/ui';
 import { openGarage } from './ui/garage';
 import { Minimap } from './ui/minimap';
-import { Room, type PlayerInfo } from './net/room';
+import { Room, type PlayerInfo, type MyInfo } from './net/room';
 import { RemotePlayers, playerColor } from './game/remotePlayers';
-import { togetherScreen, randomNickname } from './ui/together';
+import { togetherScreen } from './ui/together';
+import { randomNick, validNick, nickName, type Nick } from './game/nicknames';
 import { Stunts } from './game/stunts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -162,13 +164,16 @@ async function start() {
   const scenery = placeScenery(map);
   mark('scenery');
   const water = new WaterMap(map);
+  mark('water map');
   const play = placePlaygrounds(map);
   // Everything that never moves, split into 200 m tiles so only what is in view gets drawn.
   const statics = new THREE.Group();
   // Ramps and loops with a `build` id only appear once built in the city builder.
   const freeRamps = (map.ramps ?? []).filter((r) => !r.build), freeLoops = (map.loops ?? []).filter((l) => !l.build);
   statics.add(buildPlaygrounds(play.items, play.areas));
+  mark('playgrounds');
   const decks = bridgeSegments(map, water, scenery.grid); // once: used for the meshes and the physics
+  mark('bridge segments');
   statics.add(buildMapMeshes(map, scenery.grid, water, dyke, decks));
   mark('map meshes');
   const trees = buildTrees(scenery.trees);
@@ -228,16 +233,16 @@ async function start() {
   // --- Playing together (see src/net/room.ts) ---
   let room: Room | null = null;
   const remotes = new RemotePlayers(scene, world);
-  let nickname = '';
+  let nick: Nick = randomNick();
   try {
-    nickname = localStorage.getItem('nick') ?? '';
+    const saved = JSON.parse(localStorage.getItem('nick2') ?? 'null');
+    if (validNick(saved)) nick = saved;
   } catch {
     /* storage unavailable */
   }
-  if (!nickname) nickname = randomNickname();
-  const myInfo = (): Omit<PlayerInfo, 'id'> => {
+  const myInfo = (): MyInfo => {
     const spec = carById(progress.carId);
-    return { name: nickname, car: spec.id, paint: spec.colors[upgradesFor(progress, spec.id).paint] ?? 0 };
+    return { nick, car: spec.id, paint: spec.colors[upgradesFor(progress, spec.id).paint] ?? 0 };
   };
 
   // --- Player car (rebuilt when changing car or upgrades in the garage) ---
@@ -252,6 +257,7 @@ async function start() {
       pose = { x: p.x, z: p.z, dx: 1 - 2 * (r.y * r.y + r.z * r.z), dz: 2 * (r.x * r.z - r.w * r.y) };
       car.dispose();
       scene.remove(model.body, ...model.wheels);
+      disposeCarModel(model);
     }
     car = new Car(world, upgradedStats(spec, up), spec.dims!);
     model = buildCarModel(spec, spec.colors[up.paint] ?? 0);
@@ -287,7 +293,10 @@ async function start() {
         syncModel(m, c);
         m.flash?.(time);
       },
-      dispose: () => scene.remove(m.body, ...m.wheels),
+      dispose: () => {
+        scene.remove(m.body, ...m.wheels);
+        disposeCarModel(m);
+      },
     };
   });
   // More police cars joining is shown by the stars and heard by the sirens: no pop-up.
@@ -298,7 +307,23 @@ async function start() {
   const traffic = new Traffic(world, new RoadGraph(map, true), CARS.filter((c) => !c.premium), (spec, color) => {
     const m = buildCarModel(spec, color);
     scene.add(m.body, ...m.wheels);
-    return { sync: (c) => syncModel(m, c), dispose: () => scene.remove(m.body, ...m.wheels) };
+    const shadows = shadowSwitch([m.body, ...m.wheels]);
+    return {
+      sync: (c) => {
+        // Far away: hidden; further than CAR_SHADOW: no shadow (saves draw calls in both passes).
+        const p = c.body.translation(), d = distToViewer(p.x, p.z);
+        const show = d < CAR_HIDE;
+        m.body.visible = show;
+        for (const w of m.wheels) w.visible = show;
+        if (!show) return;
+        shadows(d < CAR_SHADOW);
+        syncModel(m, c);
+      },
+      dispose: () => {
+        scene.remove(m.body, ...m.wheels);
+        disposeCarModel(m);
+      },
+    };
   }, isTouch ? 8 : 14);
 
   // --- Pedestrians and cyclists ---
@@ -402,7 +427,7 @@ async function start() {
     head.textContent = t('inRoom', { code: room.code, n: remotes.size + 1 });
     roomEl.append(head);
     const me = document.createElement('div');
-    me.textContent = `● ${nickname}`;
+    me.textContent = `● ${nickName(nick)}`;
     me.style.color = playerColor(room.myId);
     roomEl.append(me);
     for (const p of remotes.names()) {
@@ -421,11 +446,11 @@ async function start() {
   };
   window.addEventListener('pagehide', () => room?.leave());
   const playTogether = async () => {
-    const choice = await togetherScreen(nickname);
+    const choice = await togetherScreen(nick);
     if (!choice) return;
-    nickname = choice.name;
+    nick = choice.nick;
     try {
-      localStorage.setItem('nick', nickname);
+      localStorage.setItem('nick2', JSON.stringify(nick));
     } catch {
       /* ignore */
     }
@@ -447,9 +472,9 @@ async function start() {
         showRoom();
       },
       pose: (id: string, pose: number[]) => remotes.pose(id, pose),
-      stunt: (id: string, text: string) => {
+      stunt: (id: string, points: number) => {
         const name = room?.players.get(id)?.name;
-        if (name) toast(`${name}: ${text}`, 2);
+        if (name) toast(t('stuntBy', { name, p: points }), 2);
       },
       closed: () => {
         remotes.clear();
@@ -584,7 +609,7 @@ async function start() {
     sound.coin();
     if (big) window.setTimeout(() => sound.coin(), 140);
     stuntEl.textContent = t(key, { p: pts, list });
-    if (big) room?.sendStunt(stuntEl.textContent);
+    if (big) room?.sendStunt(pts);
     stuntEl.classList.toggle('big', big);
     stuntEl.classList.add('show');
     pointsEl.classList.add('bump');
@@ -637,7 +662,7 @@ async function start() {
         else car.update(controls, world.timestep);
         police.step(world.timestep, car);
         traffic.step(world.timestep, car, police.units.map((u) => u.car));
-        remotes.step();
+        remotes.step(world.timestep);
         world.step(events);
         acc -= world.timestep;
       }
@@ -819,6 +844,8 @@ async function start() {
     const camY = p.y + 4;
     camPos.set(p.x, firstFrame ? camY : camPos.y + (camY - camPos.y) * (1 - Math.exp(-dt * 6)), p.z).addScaledVector(camFwd, -9);
     camera.position.copy(camPos);
+    viewer.x = p.x;
+    viewer.z = p.z;
     // Keep the camera out of bridges, tunnels and walls: below any ceiling over the car, and in
     // front of anything solid between the car and the camera (only static things count).
     {
@@ -913,26 +940,29 @@ async function start() {
 
   requestAnimationFrame(frame);
 
-  // Testing aids: ?grade=g5 skips the start screen, ?wanted=2 starts a chase, ?garage=ev4 opens the garage.
-  const qs = new URLSearchParams(location.search);
-  const qGrade = qs.get('grade') as typeof progress.grade;
-  if (qGrade) progress.grade = qGrade;
-  if (qs.has('people')) {
-    // ?people: a few people in front of the car (to check how they look).
-    const c = car.body.translation();
-    const q = car.body.rotation();
-    const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
-    for (let i = 0; i < 6; i++) people.placeAt(i % 2 ? 'cyclist' : 'walker', c.x + fx * (8 + i * 2) - fz * (i - 2.5) * 1.6, c.z + fz * (8 + i * 2) + fx * (i - 2.5) * 1.6, i * 1.1);
-  }
-  if (qs.get('wanted')) police.addCrash(STAR_LEVELS[Math.min(2, Number(qs.get('wanted')) - 1)]);
-  if (qs.get('garage')) {
-    progress.owned = [...new Set([...progress.owned, qs.get('garage')!])];
-    progress.carId = qs.get('garage')!;
-    buildPlayer();
-    flow(() => openGarage(progress, progress.grade, () => {
-      save();
+  // Testing aids (only in the dev server, never on the website): ?grade=g5 skips the start screen,
+  // ?wanted=2 starts a chase, ?garage=sport opens the garage with that car, ?people shows people.
+  if (import.meta.env.DEV) {
+    const qs = new URLSearchParams(location.search);
+    const qGrade = qs.get('grade') as typeof progress.grade;
+    if (qGrade && GRADES.includes(qGrade)) progress.grade = qGrade;
+    if (qs.has('people')) {
+      // ?people: a few people in front of the car (to check how they look).
+      const c = car.body.translation();
+      const q = car.body.rotation();
+      const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
+      for (let i = 0; i < 6; i++) people.placeAt(i % 2 ? 'cyclist' : 'walker', c.x + fx * (8 + i * 2) - fz * (i - 2.5) * 1.6, c.z + fz * (8 + i * 2) + fx * (i - 2.5) * 1.6, i * 1.1);
+    }
+    if (qs.get('wanted')) police.addCrash(STAR_LEVELS[Math.min(2, Number(qs.get('wanted')) - 1)]);
+    if (qs.get('garage')) {
+      progress.owned = [...new Set([...progress.owned, qs.get('garage')!])];
+      progress.carId = qs.get('garage')!;
       buildPlayer();
-    }));
+      flow(() => openGarage(progress, progress.grade, () => {
+        save();
+        buildPlayer();
+      }));
+    }
   }
 
   // First visit: choose language and grade.
