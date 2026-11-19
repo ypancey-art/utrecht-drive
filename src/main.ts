@@ -36,9 +36,10 @@ import { t, getLang, setLang, onLangChange } from './i18n';
 import { isOpen, startScreen, mathGate, dialog, toast } from './ui/ui';
 import { openGarage } from './ui/garage';
 import { Minimap } from './ui/minimap';
-import { Room, type PlayerInfo } from './net/room';
+import { Room, type PlayerInfo, type MyInfo } from './net/room';
 import { RemotePlayers, playerColor } from './game/remotePlayers';
-import { togetherScreen, randomNickname } from './ui/together';
+import { togetherScreen } from './ui/together';
+import { randomNick, validNick, nickName, type Nick } from './game/nicknames';
 import { Stunts } from './game/stunts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -228,16 +229,16 @@ async function start() {
   // --- Playing together (see src/net/room.ts) ---
   let room: Room | null = null;
   const remotes = new RemotePlayers(scene, world);
-  let nickname = '';
+  let nick: Nick = randomNick();
   try {
-    nickname = localStorage.getItem('nick') ?? '';
+    const saved = JSON.parse(localStorage.getItem('nick2') ?? 'null');
+    if (validNick(saved)) nick = saved;
   } catch {
     /* storage unavailable */
   }
-  if (!nickname) nickname = randomNickname();
-  const myInfo = (): Omit<PlayerInfo, 'id'> => {
+  const myInfo = (): MyInfo => {
     const spec = carById(progress.carId);
-    return { name: nickname, car: spec.id, paint: spec.colors[upgradesFor(progress, spec.id).paint] ?? 0 };
+    return { nick, car: spec.id, paint: spec.colors[upgradesFor(progress, spec.id).paint] ?? 0 };
   };
 
   // --- Player car (rebuilt when changing car or upgrades in the garage) ---
@@ -402,7 +403,7 @@ async function start() {
     head.textContent = t('inRoom', { code: room.code, n: remotes.size + 1 });
     roomEl.append(head);
     const me = document.createElement('div');
-    me.textContent = `● ${nickname}`;
+    me.textContent = `● ${nickName(nick)}`;
     me.style.color = playerColor(room.myId);
     roomEl.append(me);
     for (const p of remotes.names()) {
@@ -421,11 +422,11 @@ async function start() {
   };
   window.addEventListener('pagehide', () => room?.leave());
   const playTogether = async () => {
-    const choice = await togetherScreen(nickname);
+    const choice = await togetherScreen(nick);
     if (!choice) return;
-    nickname = choice.name;
+    nick = choice.nick;
     try {
-      localStorage.setItem('nick', nickname);
+      localStorage.setItem('nick2', JSON.stringify(nick));
     } catch {
       /* ignore */
     }
@@ -447,9 +448,9 @@ async function start() {
         showRoom();
       },
       pose: (id: string, pose: number[]) => remotes.pose(id, pose),
-      stunt: (id: string, text: string) => {
+      stunt: (id: string, points: number) => {
         const name = room?.players.get(id)?.name;
-        if (name) toast(`${name}: ${text}`, 2);
+        if (name) toast(t('stuntBy', { name, p: points }), 2);
       },
       closed: () => {
         remotes.clear();
@@ -584,7 +585,7 @@ async function start() {
     sound.coin();
     if (big) window.setTimeout(() => sound.coin(), 140);
     stuntEl.textContent = t(key, { p: pts, list });
-    if (big) room?.sendStunt(stuntEl.textContent);
+    if (big) room?.sendStunt(pts);
     stuntEl.classList.toggle('big', big);
     stuntEl.classList.add('show');
     pointsEl.classList.add('bump');
@@ -637,7 +638,7 @@ async function start() {
         else car.update(controls, world.timestep);
         police.step(world.timestep, car);
         traffic.step(world.timestep, car, police.units.map((u) => u.car));
-        remotes.step();
+        remotes.step(world.timestep);
         world.step(events);
         acc -= world.timestep;
       }
@@ -913,26 +914,29 @@ async function start() {
 
   requestAnimationFrame(frame);
 
-  // Testing aids: ?grade=g5 skips the start screen, ?wanted=2 starts a chase, ?garage=ev4 opens the garage.
-  const qs = new URLSearchParams(location.search);
-  const qGrade = qs.get('grade') as typeof progress.grade;
-  if (qGrade) progress.grade = qGrade;
-  if (qs.has('people')) {
-    // ?people: a few people in front of the car (to check how they look).
-    const c = car.body.translation();
-    const q = car.body.rotation();
-    const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
-    for (let i = 0; i < 6; i++) people.placeAt(i % 2 ? 'cyclist' : 'walker', c.x + fx * (8 + i * 2) - fz * (i - 2.5) * 1.6, c.z + fz * (8 + i * 2) + fx * (i - 2.5) * 1.6, i * 1.1);
-  }
-  if (qs.get('wanted')) police.addCrash(STAR_LEVELS[Math.min(2, Number(qs.get('wanted')) - 1)]);
-  if (qs.get('garage')) {
-    progress.owned = [...new Set([...progress.owned, qs.get('garage')!])];
-    progress.carId = qs.get('garage')!;
-    buildPlayer();
-    flow(() => openGarage(progress, progress.grade, () => {
-      save();
+  // Testing aids (only in the dev server, never on the website): ?grade=g5 skips the start screen,
+  // ?wanted=2 starts a chase, ?garage=sport opens the garage with that car, ?people shows people.
+  if (import.meta.env.DEV) {
+    const qs = new URLSearchParams(location.search);
+    const qGrade = qs.get('grade') as typeof progress.grade;
+    if (qGrade && GRADES.includes(qGrade)) progress.grade = qGrade;
+    if (qs.has('people')) {
+      // ?people: a few people in front of the car (to check how they look).
+      const c = car.body.translation();
+      const q = car.body.rotation();
+      const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
+      for (let i = 0; i < 6; i++) people.placeAt(i % 2 ? 'cyclist' : 'walker', c.x + fx * (8 + i * 2) - fz * (i - 2.5) * 1.6, c.z + fz * (8 + i * 2) + fx * (i - 2.5) * 1.6, i * 1.1);
+    }
+    if (qs.get('wanted')) police.addCrash(STAR_LEVELS[Math.min(2, Number(qs.get('wanted')) - 1)]);
+    if (qs.get('garage')) {
+      progress.owned = [...new Set([...progress.owned, qs.get('garage')!])];
+      progress.carId = qs.get('garage')!;
       buildPlayer();
-    }));
+      flow(() => openGarage(progress, progress.grade, () => {
+        save();
+        buildPlayer();
+      }));
+    }
   }
 
   // First visit: choose language and grade.

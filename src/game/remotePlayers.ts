@@ -27,6 +27,9 @@ interface Remote {
   x: number;
   z: number;
   visible: boolean;
+  /** Seconds left with the collider switched off (after a jump across the map). */
+  ghost: number;
+  parked: boolean;
 }
 
 const _q = new THREE.Quaternion(), _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _wq = new THREE.Quaternion();
@@ -53,10 +56,10 @@ export class RemotePlayers {
     this.scene.add(model.body, ...model.wheels);
     const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -50, 0));
     const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(d.length / 2, 0.4, d.width / 2).setFriction(0.4), body);
-    this.list.set(info.id, { info, model, tag, body, collider, snaps: [], spin: 0, x: 0, z: 0, visible: false });
+    this.list.set(info.id, { info, model, tag, body, collider, snaps: [], spin: 0, x: 0, z: 0, visible: false, ghost: 0, parked: true });
   }
 
-  /** Car, paint or name changed: rebuild that car. */
+  /** Car or paint changed: rebuild that car. */
   change(info: PlayerInfo) {
     const r = this.list.get(info.id);
     const snaps = r?.snaps ?? [];
@@ -68,8 +71,13 @@ export class RemotePlayers {
     const r = this.list.get(id);
     if (!r) return;
     this.scene.remove(r.model.body, ...r.model.wheels);
+    // The car's materials are its own copies: free them (geometry is shared with the car pack).
+    for (const root of [r.model.body, ...r.model.wheels])
+      root.traverse((o) => {
+        const m = (o as THREE.Mesh).material;
+        if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.dispose();
+      });
     r.tag.material.map?.dispose();
-    r.tag.material.dispose();
     this.world.removeRigidBody(r.body);
     this.list.delete(id);
   }
@@ -104,10 +112,32 @@ export class RemotePlayers {
   }
 
   /** Moves the bodies (call before the physics step). */
-  step() {
+  step(dt: number) {
     for (const r of this.list.values()) {
-      if (!this.sample(r)) continue;
-      r.body.setNextKinematicTranslation(r.model.body.position);
+      if (!this.sample(r)) {
+        // No recent pose: move the invisible body out of the way.
+        if (!r.parked) {
+          r.body.setTranslation({ x: 0, y: -50, z: 0 }, true);
+          r.parked = true;
+        }
+        continue;
+      }
+      const to = r.model.body.position, at = r.body.translation();
+      if (r.parked || Math.hypot(to.x - at.x, to.y - at.y, to.z - at.z) > 8) {
+        // A jump (respawn, or a bad pose): teleport without sweeping through other cars, and
+        // don't collide for a moment so it can't land on top of someone and fling them.
+        r.body.setTranslation(to, true);
+        r.body.setRotation(r.model.body.quaternion, true);
+        r.collider.setEnabled(false);
+        r.ghost = 0.5;
+        r.parked = false;
+        continue;
+      }
+      if (r.ghost > 0) {
+        r.ghost -= dt;
+        if (r.ghost <= 0) r.collider.setEnabled(true);
+      }
+      r.body.setNextKinematicTranslation(to);
       r.body.setNextKinematicRotation(r.model.body.quaternion);
     }
   }

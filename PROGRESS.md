@@ -169,3 +169,13 @@ Known gaps / next steps:
   Every candidate is test-driven with compact + sport in the full world, then everything (old + new ramps, loops) is driven again in a fresh world; extras that break something are dropped. Roof ramps ignore trees in the raster (test drive decides; trees stop blocking soon).
 - `tests/world.ts` exports `driveRamp`/`driveLoop`/`rampRunUp` (the test drives, shared by the tests and the script). New kinds: jump/gap must fly (>0.6 s air) and get 40/55 m past the ramp upright; 'land' is driven via its take-off.
 - New stunt bonuses in `src/game/stunts.ts` (class `Stunts`; main.ts only has 4 hook lines: create, `landed()` in landJump, `loop()`, `update()` per frame): two wheels (one side's wheels only, roll 25-60°, >= 1 s), wheelie (rear wheels only, nose up 8-50°, >= 1 s), near miss (traffic car alongside within 1 m at > 40 km/h, no contact via `world.contactPair`), water jump (water under the flight, dry ends), gap jump (landed on a 'land' ramp), double/triple/combo jumps (next take-off within 4 s of a landing), loop combos (loops within 12 s). Texts NL+EN in i18n (trick*/stunt* keys). Unit tests: tests/stunts.test.ts.
+
+## Security pass (2026-11-19)
+Review found the static site clean (npm audit 0, no secrets in history, no innerHTML/eval) but the public MQTT relay open to anyone. Fixed:
+- Room code is now 6 characters (crypto random) and a real key: PBKDF2(code) → hashed topic `utrecht-drive/v2/<hash>/` + AES-GCM for every payload. Without the code nobody can find, read or post into a room (wrong key → message ignored)
+- No free text over the network: nicknames are 2 word numbers (`src/game/nicknames.ts`), stunts are points only (`stuntBy` text built locally)
+- Limits: max 8 players (extra ids ignored), id format checked, poses bounded to the map (|x|,|z| < 1500, unit quaternion…), max 20 poses/s per player, payloads > 2 KB ignored, MQTT packets > 8 KB skipped without buffering (they used to close the room)
+- Remote cars: a jump > 8 m teleports with the collider off for 0.5 s (no ramming), bodies parked when a player goes quiet, cloned materials disposed
+- Progress from localStorage repaired field by field (`clean()` in progress.ts); `?grade/?wanted/?garage/?people` only in the dev server
+- CSP meta tag in production builds (vite.config.ts); deploy workflow: no default permissions, build job read-only, actions pinned to commit SHAs, checkout without persisted credentials
+- Tests: tests/security.test.ts. Manual: attacker with the topic but no key could not add players, show text, move cars or close the room
