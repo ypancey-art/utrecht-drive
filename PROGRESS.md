@@ -154,3 +154,12 @@ Known gaps / next steps:
 - `placeScenery` thins trees by 30% (`thinOut`): lowest height x position-hash jitter (0.75-1.25) go first, so mostly small/young trees; big old trees stay. 4348 -> 3034 trees.
 - Trees are also kept off standalone loops (`loopSections`) and off jump ramps incl. 12 m run-up and 15 m landing (`onRamp`).
 - No tree trunk colliders any more (`buildMapPhysics` ignores its `trees` argument): player, traffic and police drive through trees. `buildTrees` returns a `TreeGroup`; `trees.update(dt, x, z, speed)` in main.ts makes a tree the player drives through sway (decaying tilt away from the car, ~2.5 s). Uses an 8 m grid of trees; instance slots are looked up once after `tileStatic` split the meshes.
+
+## Play together + police (2026-11-19)
+- [x] Multiplayer rooms (`src/net/room.ts`, `src/net/mqtt.ts`, `src/game/remotePlayers.ts`, `src/ui/together.ts`): menu → "Samen spelen". Host gets a 4-letter code, up to 8 players. Made-up nicknames only (adjective + animal, 🎲 for another one)
+- Transport: public MQTT brokers over WSS (HiveMQ, fallback EMQX), own tiny MQTT 3.1.1 client (no library). Topics `utrecht-drive/v1/<CODE>/{room,info/<id>,p/<id>,s/<id>}`; `room` and `info` are retained and cleared by a last will on a lost connection. Poses 10 Hz, drawn 160 ms behind with interpolation
+- WebRTC (PeerJS) was tried first: no TURN relay answered, so peers behind NAT (and even two tabs on one Mac) could not connect. The relay also hides players' IP addresses from each other
+- Other cars: kinematic Rapier bodies (you can bump them), name tag sprite, coloured dots on the minimap, player list bottom-left. Stunt combos are shown to the others
+- Keep-alive is 300 s: background tabs throttle timers and the broker dropped the host at 30 s
+- Debug: `game.room()`, `game.remotes`; in-page test client: `const { Room } = await import('/src/net/room.ts')`
+- [x] Police: only hitting people counts. Chase after a random 3-5 hits (`Police.addPersonHit`), one hit forgiven per 45 s. Wall/car crashes only make noise (armour upgrade no longer affects police)
