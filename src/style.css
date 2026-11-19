@@ -108,3 +108,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9ec9e8; fon
 @media (max-width: 600px) { #minimap { width: 120px; height: 120px; } }
 #stunt.big { color: #ffb347; font-size: 24px; }
 .pad .trick { background: rgba(230, 120, 30, 0.7); width: 64px; height: 64px; font-size: 26px; align-self: flex-end; }
+
+/* Playing together: room code and players, under the counters. */
+#room { position: fixed; left: 10px; bottom: 190px; background: rgba(20, 24, 32, 0.75); color: #fff; border-radius: 10px; padding: 6px 10px; font: 600 13px/1.45 system-ui, sans-serif; pointer-events: none; max-width: 200px; }
+#room .room-head { color: #ffd23f; margin-bottom: 2px; }
+#room div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card h3 { margin: 16px 0 4px; font-size: 17px; }
+.nick-row { align-items: center; }
+.nick { font-size: 18px; color: #2f6f8f; }
+.code-input { font: 700 24px/1 ui-monospace, monospace; letter-spacing: 6px; width: 140px; padding: 8px 10px; border: 2px solid #c9c4b8; border-radius: 10px; text-transform: uppercase; text-align: center; }
+body.touch-device #room { left: auto; right: 10px; top: 222px; bottom: auto; }

@@ -36,6 +36,9 @@ import { t, getLang, setLang, onLangChange } from './i18n';
 import { isOpen, startScreen, mathGate, dialog, toast } from './ui/ui';
 import { openGarage } from './ui/garage';
 import { Minimap } from './ui/minimap';
+import { Room, type PlayerInfo } from './net/room';
+import { RemotePlayers, playerColor } from './game/remotePlayers';
+import { togetherScreen, randomNickname } from './ui/together';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const loadingEl = $('loading');
@@ -220,6 +223,21 @@ async function start() {
   mark('physics');
   const graph = new RoadGraph(map);
 
+  // --- Playing together (see src/net/room.ts) ---
+  let room: Room | null = null;
+  const remotes = new RemotePlayers(scene, world);
+  let nickname = '';
+  try {
+    nickname = localStorage.getItem('nick') ?? '';
+  } catch {
+    /* storage unavailable */
+  }
+  if (!nickname) nickname = randomNickname();
+  const myInfo = (): Omit<PlayerInfo, 'id'> => {
+    const spec = carById(progress.carId);
+    return { name: nickname, car: spec.id, paint: spec.colors[upgradesFor(progress, spec.id).paint] ?? 0 };
+  };
+
   // --- Player car (rebuilt when changing car or upgrades in the garage) ---
   let car!: Car;
   let model!: CarModel;
@@ -237,6 +255,7 @@ async function start() {
     model = buildCarModel(spec, spec.colors[up.paint] ?? 0);
     scene.add(model.body, ...model.wheels);
     if (pose) car.place(pose.x, pose.z, pose.dx, pose.dz);
+    room?.setInfo(myInfo());
   };
   buildPlayer();
 
@@ -290,7 +309,7 @@ async function start() {
   const crashFx = makeCrashFx(scene);
   let shake = 0; // camera shake after hitting someone
   people.onHit = (strength, x, z) => {
-    police.addCrash(30 * armourFactor(carById(progress.carId), upgradesFor(progress, progress.carId)));
+    police.addPersonHit();
     sound.crash(0.5 + strength * 0.5);
     crashFx.burst(x, z, strength);
     shake = Math.max(shake, 0.15 + strength * 0.35);
@@ -368,6 +387,100 @@ async function start() {
       toast(t('free'));
     });
 
+  const roomEl = document.createElement('div');
+  roomEl.id = 'room';
+  roomEl.className = 'hidden';
+  document.body.appendChild(roomEl);
+  const showRoom = () => {
+    roomEl.classList.toggle('hidden', !room);
+    if (!room) return;
+    roomEl.replaceChildren();
+    const head = document.createElement('div');
+    head.className = 'room-head';
+    head.textContent = t('inRoom', { code: room.code, n: remotes.size + 1 });
+    roomEl.append(head);
+    const me = document.createElement('div');
+    me.textContent = `● ${nickname}`;
+    me.style.color = playerColor(room.myId);
+    roomEl.append(me);
+    for (const p of remotes.names()) {
+      const el = document.createElement('div');
+      el.textContent = `● ${p.name}`;
+      el.style.color = p.color;
+      roomEl.append(el);
+    }
+  };
+  onLangChange(showRoom);
+  const leaveRoom = () => {
+    room?.leave();
+    room = null;
+    remotes.clear();
+    showRoom();
+  };
+  window.addEventListener('pagehide', () => room?.leave());
+  const playTogether = async () => {
+    const choice = await togetherScreen(nickname);
+    if (!choice) return;
+    nickname = choice.name;
+    try {
+      localStorage.setItem('nick', nickname);
+    } catch {
+      /* ignore */
+    }
+    const events = {
+      join: (p: PlayerInfo) => {
+        remotes.add(p);
+        if (room) toast(t('playerJoined', { name: p.name }), 2);
+        sound.coin();
+        showRoom();
+      },
+      info: (p: PlayerInfo) => {
+        remotes.change(p);
+        showRoom();
+      },
+      leave: (id: string) => {
+        const name = remotes.nameOf(id);
+        remotes.remove(id);
+        if (name) toast(t('playerLeft', { name }), 2);
+        showRoom();
+      },
+      pose: (id: string, pose: number[]) => remotes.pose(id, pose),
+      stunt: (id: string, text: string) => {
+        const name = room?.players.get(id)?.name;
+        if (name) toast(`${name}: ${text}`, 2);
+      },
+      closed: () => {
+        remotes.clear();
+        room = null;
+        showRoom();
+        toast(t('roomClosed'), 3);
+      },
+    };
+    toast(t('connecting'), 0);
+    try {
+      if (choice.kind === 'host') {
+        room = await Room.create(myInfo(), events);
+        toast('', 0.01);
+        showRoom();
+        await dialog(t('roomOpen', { code: room.code }), t('roomOpenBody', { code: room.code }), [{ label: t('resume'), value: 0, primary: true }]);
+      } else {
+        room = await Room.join(choice.code, myInfo(), events);
+        toast(t('joinedRoom', { code: room.code }), 3);
+        showRoom();
+      }
+    } catch (e) {
+      room = null;
+      remotes.clear();
+      showRoom();
+      const msg = (e as Error)?.message;
+      const code = choice.kind === 'join' ? choice.code : '';
+      toast('', 0.01);
+      await dialog(t('together'), msg === 'no-room' || msg === 'timeout' ? t('noRoom', { code }) : msg === 'full' ? t('roomFull', { code }) : t('netError'), [
+        { label: t('close'), value: 0, primary: true },
+      ]);
+    }
+  };
+
   const openMenu = () =>
     flow(async () => {
       const choice = await dialog(t('menu'), '', [
@@ -377,6 +490,7 @@ async function start() {
         { label: t('earnCoins'), value: 'earn' },
         { label: t('build'), value: 'build' },
         { label: t('startChase'), value: 'chase' },
+        { label: room ? t('leaveRoom', { code: room.code }) : t('together'), value: 'together' },
       ]);
       if (choice === 'garage') {
         await openGarage(progress, progress.grade, () => {
@@ -414,6 +528,9 @@ async function start() {
       } else if (choice === 'chase') {
         police.startChase();
         toast(t('policeComing'), 2.5);
+      } else if (choice === 'together') {
+        if (room) leaveRoom();
+        else await playTogether();
       } else if (choice === 'grade') {
         progress.grade = await startScreen(progress.grade);
         save();
@@ -464,6 +581,7 @@ async function start() {
     sound.coin();
     if (big) window.setTimeout(() => sound.coin(), 140);
     stuntEl.textContent = t(key, { p: pts, list });
+    if (big) room?.sendStunt(stuntEl.textContent);
     stuntEl.classList.toggle('big', big);
     stuntEl.classList.add('show');
     pointsEl.classList.add('bump');
@@ -515,6 +633,7 @@ async function start() {
         else car.update(controls, world.timestep);
         police.step(world.timestep, car);
         traffic.step(world.timestep, car, police.units.map((u) => u.car));
+        remotes.step();
         world.step(events);
         acc -= world.timestep;
       }
@@ -537,7 +656,7 @@ async function start() {
           lastHit.set(other, performance.now());
           points = Math.max(points, 0) + 22 * armour;
         }
-        if (points > 2) police.addCrash(points);
+        // Only hitting people calls the police (see people.onHit); other crashes just make noise.
         if (points > 1.5) crashLoud = Math.max(crashLoud, points / 25);
       });
       if (crashLoud > 0 && now - lastCrashSound > 250) {
@@ -620,7 +739,7 @@ async function start() {
         const q = car.body.rotation();
         const hx = 1 - 2 * (q.y * q.y + q.z * q.z), hz = 2 * (q.x * q.z - q.w * q.y);
         people.update(dt, cp.x, cp.z, car.sinking ? 0 : car.speed, Math.atan2(hz, hx));
-        if (frameNo % 2 === 0) minimap.draw(cp.x, cp.z, Math.atan2(hz, hx));
+        if (frameNo % 2 === 0) minimap.draw(cp.x, cp.z, Math.atan2(hz, hx), remotes.dots());
       }
 
       // Police: chase, escape or caught.
@@ -675,6 +794,11 @@ async function start() {
 
     // Sync visuals.
     syncModel(model, car);
+    remotes.update3d(dt);
+    if (room) {
+      const bp = car.body.translation(), bq = car.body.rotation();
+      room.setPose([bp.x, bp.y, bp.z, bq.x, bq.y, bq.z, bq.w, car.sinking ? 0 : car.speed, car.wheelState(0).steering]);
+    }
     const p = car.body.translation();
     const r = car.body.rotation();
     tmp.set(1 - 2 * (r.y * r.y + r.z * r.z), 0, 2 * (r.x * r.z - r.w * r.y));
@@ -813,7 +937,7 @@ async function start() {
   }
 
   // Handy for debugging in the browser console.
-  (window as unknown as { game: unknown }).game = { renderer, people, car: () => car, world, map, scene, camera, police, runner, progress, traffic, addBuilt, minimap };
+  (window as unknown as { game: unknown }).game = { renderer, people, car: () => car, world, map, scene, camera, police, runner, progress, traffic, addBuilt, minimap, remotes, room: () => room };
 }
 
 start().catch((err) => {

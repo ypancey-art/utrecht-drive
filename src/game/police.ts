@@ -26,6 +26,9 @@ const CATCH_RANGE = 7;
 
 export class Police {
   meter = 0; // crash meter 0..100
+  /** People hit since the last chase (slowly forgiven). The chase starts at hitsNeeded (3 to 5). */
+  hits = 0;
+  hitsNeeded = 3 + Math.floor(Math.random() * 3);
   stars = 0;
   unseen = 0; // seconds the player has been out of sight
   caughtTimer = 0;
@@ -58,6 +61,17 @@ export class Police {
     }
   }
 
+  /** Hitting a pedestrian or cyclist: after 3 to 5 of them the police come. */
+  addPersonHit() {
+    if (this.stars) {
+      this.meter = Math.min(100, this.meter + 15);
+      return;
+    }
+    this.hits += 1;
+    if (this.hits >= this.hitsNeeded - 0.01) this.addCrash(STAR_LEVELS[0]);
+    else this.meter = (this.hits / this.hitsNeeded) * STAR_LEVELS[0];
+  }
+
   /** Starts a chase right away (menu option). */
   startChase() {
     this.addCrash(Math.max(0, STAR_LEVELS[0] - this.meter));
@@ -75,11 +89,14 @@ export class Police {
   /** Called every frame. Returns 'caught', 'escaped' or null. */
   update(dt: number, player: Car): 'caught' | 'escaped' | null {
     this.time += dt;
-    this.meter = Math.max(0, this.meter - dt * 1.2);
     if (this.stars === 0) {
+      // One hit is forgiven every 45 s.
+      this.hits = Math.max(0, this.hits - dt / 45);
+      this.meter = (this.hits / this.hitsNeeded) * STAR_LEVELS[0];
       this.heat = Math.max(0, this.heat - dt / 90);
       return null;
     }
+    this.meter = Math.max(0, this.meter - dt * 1.2);
     // The longer you stay free, the more police join (every 25 s, up to 3 stars).
     this.chaseTime += dt;
     if (this.stars < 3 && this.chaseTime > 25 * this.stars) {
@@ -138,6 +155,8 @@ export class Police {
     this.units = [];
     this.stars = 0;
     this.meter = 0;
+    this.hits = 0;
+    this.hitsNeeded = 3 + Math.floor(Math.random() * 3);
     this.unseen = 0;
     this.caughtTimer = 0;
   }

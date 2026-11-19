@@ -47,7 +47,7 @@ export class Minimap {
   }
 
   /** px, pz: car position; heading: angle of the car's forward direction (atan2(fz, fx)). */
-  draw(px: number, pz: number, heading: number) {
+  draw(px: number, pz: number, heading: number, players: [number, number, string, string][] = []) {
     const g = this.ctx, d = this.dpr, R = (SIZE / 2) * d, s = R / RANGE;
     const sn = Math.sin(heading), cs = Math.cos(heading);
     // World (x, z) to screen: forward is up, right is right.
@@ -99,6 +99,20 @@ export class Minimap {
       g.beginPath();
       g.arc(R + ux * (R - 5 * d), R + uy * (R - 5 * d), r, 0, Math.PI * 2);
       g.fill();
+      g.stroke();
+    }
+
+    // Other players: coloured dots (on the rim when out of view).
+    for (const [x, z, color] of players) {
+      let [sx, sy] = toScreen(x, z);
+      const dx = sx - R, dy = sy - R, dist = Math.hypot(dx, dy), max = R - 6 * d;
+      if (dist > max) [sx, sy] = [R + (dx / dist) * max, R + (dy / dist) * max];
+      g.beginPath();
+      g.arc(sx, sy, 5 * d, 0, Math.PI * 2);
+      g.fillStyle = color;
+      g.fill();
+      g.strokeStyle = '#fff';
+      g.lineWidth = 1.5 * d;
       g.stroke();
     }
 

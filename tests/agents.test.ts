@@ -93,6 +93,17 @@ test('police: chases start, grow, and come back stronger after an escape', async
   police.addCrash(2);
   assert.equal(police.stars, 1);
   police.clear();
+  // People: the chase starts after 3 to 5 hits, not before.
+  for (let round = 0; round < 10; round++) {
+    let n = 0;
+    while (police.stars === 0 && n < 10) {
+      police.addPersonHit();
+      n++;
+    }
+    assert.ok(n >= 3 && n <= 5, `chase after ${n} hits`);
+    police.clear();
+  }
+  police.clear();
   player.dispose();
 });
 
