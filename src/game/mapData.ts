@@ -33,8 +33,10 @@ export interface Loop { x: number; z: number; yaw: number; r: number; d: number;
 export interface Track {
   id: string;
   name: string;
-  parts: ({ kind: 'path'; pts: [number, number, number][] } | { kind: 'loop'; loop: Loop })[];
+  // bank: optional roll angle per path point (radians, + = leaning into a right-hand bend)
+  parts: ({ kind: 'path'; pts: [number, number, number][]; bank?: number[] } | { kind: 'loop'; loop: Loop })[];
   through: { b: number; y: number }[];
+  over?: number[]; // buildings whose roof it runs across on a deck (no posts inside them)
   free?: boolean; // there from the start (not built in the city builder)
 }
 export interface CityTree { p: Pt; genus: string; species: string; year: number }

@@ -85,8 +85,9 @@ export function buildTrack(t: Track, buildings: Building[], postOk: (x: number, 
   const m = materials();
   const thr = t.through.map((x) => buildings[x.b]);
   const inBuilding = (x: number, z: number) => thr.some((b) => inside(b.pts, x, z));
+  const roofs = (t.over ?? []).map((i) => buildings[i]);
   for (const secs of trackSections(t)) strip(group, secs);
-  posts(group, trackPosts(t, (x, z) => postOk(x, z) && !inBuilding(x, z)));
+  posts(group, trackPosts(t, (x, z) => postOk(x, z) && !inBuilding(x, z) && !roofs.some((b) => inside(b.pts, x, z))));
   // Beams over the loops.
   for (const part of t.parts)
     if (part.kind === 'loop') {

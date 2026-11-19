@@ -1,7 +1,7 @@
 // Builds the game world without a browser (data + physics), shared by the tests.
 import RAPIER from '@dimforge/rapier3d-compat';
 import { readFileSync } from 'node:fs';
-import type { MapData, Ramp, Loop } from '../src/game/mapData';
+import type { MapData, Ramp, Loop, Track } from '../src/game/mapData';
 import { Car } from '../src/game/car';
 import { CARS } from '../src/game/cars';
 import { loopEntry } from '../src/game/loops';
@@ -122,4 +122,78 @@ export function driveLoop({ world }: Pick<World, 'world'>, l: Loop, carId: strin
   car.dispose();
   if (maxY <= l.r * 2 - 1) return `did not reach the top (max ${maxY.toFixed(1)} m)`;
   return out && !flipped ? '' : 'did not come out on its wheels';
+}
+
+/**
+ * Drives a Hot Wheels track from start to end at full throttle, steering at a point ~8 m ahead
+ * on the centre line (not inside loops). '' if the car gets over the top of every loop and
+ * reaches the end upright. `strict`: it must also never drop off the track (a planned gap is
+ * flown over, above the track) and never roll over outside a loop. Shared by tests/world.test.ts and the placement scripts.
+ */
+const EASE_ACC = 14; // m/s²: how hard a careful driver takes a bend (walls and banking help)
+export function driveTrack({ world }: Pick<World, 'world'>, t: Track, carId: string, opts: { strict?: boolean; ease?: boolean; log?: (s: string) => void } = {}): string {
+  const spec = CARS.find((c) => c.id === carId)!;
+  const paths = t.parts.filter((p) => p.kind === 'path').map((p) => (p as { pts: [number, number, number][] }).pts);
+  const loops = t.parts.filter((p) => p.kind === 'loop').map((p) => (p as { loop: Loop }).loop);
+  const all = paths.flat();
+  const [sx, sy, sz] = all[0], [nx, , nz] = all[2], l = Math.hypot(nx - sx, nz - sz);
+  const car = new Car(world, spec.stats, spec.dims);
+  // Tracks start on the ground (or on the railway dyke: y = the track bed).
+  car.place(sx - ((nx - sx) / l) * 10, sz - ((nz - sz) / l) * 10, (nx - sx) / l, (nz - sz) / l, sy);
+  const end = all[all.length - 1];
+  const tops = loops.map(() => 0);
+  let reached = false, fell = '', flipAt = '';
+  for (let i = 0; i < 60 * 60 && !reached; i++) {
+    const p = car.body.translation(), q = car.body.rotation();
+    const upY = 1 - 2 * (q.x * q.x + q.z * q.z);
+    let best = 0, bd = Infinity;
+    for (let k = 0; k < all.length; k++) {
+      const d = (all[k][0] - p.x) ** 2 + (all[k][2] - p.z) ** 2 + (all[k][1] - p.y) ** 2;
+      if (d < bd) (bd = d), (best = k);
+    }
+    // Look ahead ~9 m, further at speed (like a driver looking further down the road).
+    const v = car.body.linvel(), ahead = Math.max(9, Math.hypot(v.x, v.z) * 0.35);
+    let k = best, d = 0;
+    while (k < all.length - 1 && d < ahead) (d += Math.hypot(all[k + 1][0] - all[k][0], all[k + 1][2] - all[k][2])), k++;
+    const tg = all[k];
+    const fx = 1 - 2 * (q.y * q.y + q.z * q.z), fz = 2 * (q.x * q.z - q.w * q.y);
+    const ang = Math.atan2(fx * (tg[2] - p.z) - fz * (tg[0] - p.x), fx * (tg[0] - p.x) + fz * (tg[2] - p.z));
+    const inLoop = loops.findIndex((lp) => Math.hypot(p.x - lp.x, p.z - lp.z) < 20 && p.y > (lp.y ?? 0) - 1);
+    // `ease`: like a player, lift off the throttle when going too fast for a bend coming up
+    // (the next 50 m). Otherwise full throttle all the way.
+    let throttle = 1;
+    if (opts.ease && inLoop < 0) {
+      let kMax = 0, dd = 0, kHere = 0;
+      for (let j = best + 1; j < all.length - 1 && dd < 50; j++) {
+        const a0 = Math.atan2(all[j][2] - all[j - 1][2], all[j][0] - all[j - 1][0]), a1 = Math.atan2(all[j + 1][2] - all[j][2], all[j + 1][0] - all[j][0]);
+        const seg = Math.hypot(all[j + 1][0] - all[j][0], all[j + 1][2] - all[j][2]);
+        dd += seg;
+        const kk = seg > 0.5 ? Math.abs(Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0))) / seg : 0;
+        kMax = Math.max(kMax, kk);
+        if (dd < 8) kHere = Math.max(kHere, kk);
+      }
+      const vMax = kMax > 0 ? Math.sqrt(EASE_ACC / kMax) : Infinity, sp = Math.hypot(v.x, v.z);
+      // Brake (in pulses, like ABS, so the wheels don't lock) only on the straight before it.
+      throttle = sp > vMax * 1.1 && kHere < 0.02 && i % 3 === 0 ? -1 : sp > vMax ? 0 : 1;
+    }
+    car.update({ throttle, steer: inLoop >= 0 || upY < 0.7 ? 0 : Math.max(-1, Math.min(1, ang * 2)), handbrake: false }, world.timestep);
+    world.step();
+    if (inLoop >= 0) tops[inLoop] = Math.max(tops[inLoop], p.y);
+    if (opts.log && i % 15 === 0) opts.log(`t ${(i / 60).toFixed(2)} pt ${best}/${all.length} ${p.x.toFixed(0)},${p.y.toFixed(1)},${p.z.toFixed(0)} track y ${all[best][1].toFixed(1)} v ${Math.hypot(v.x, v.z).toFixed(1)} up ${upY.toFixed(2)} throttle ${throttle} loop ${inLoop}`);
+    if (inLoop < 0 && upY < 0.3 && !flipAt) flipAt = ` (upside down at ${p.x.toFixed(0)},${p.y.toFixed(1)},${p.z.toFixed(0)}, point ${best}/${all.length})`;
+    // Dropped off: well below the nearest bit of track.
+    if (opts.strict && inLoop < 0 && Math.hypot(all[best][0] - p.x, all[best][2] - p.z) < 10 && p.y < all[best][1] - 2.5) {
+      fell = `fell off at ${p.x.toFixed(0)},${p.y.toFixed(1)},${p.z.toFixed(0)} (point ${best}/${all.length})`;
+      break;
+    }
+    if (Math.hypot(p.x - end[0], p.z - end[2]) < 8 && p.y < end[1] + 2.5) reached = true;
+  }
+  const flipped = car.flipped;
+  car.dispose();
+  if (fell) return fell;
+  if (opts.strict && flipAt) return 'rolled over' + flipAt;
+  const low = loops.findIndex((lp, k) => tops[k] <= (lp.y ?? 0) + lp.r * 2 - 1.5);
+  if (low >= 0) return `did not get over the top of loop ${low + 1} (${tops[low].toFixed(1)} m)`;
+  if (!reached) return 'did not reach the end' + flipAt;
+  return flipped ? 'flipped at the end' + flipAt : '';
 }

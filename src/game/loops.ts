@@ -77,8 +77,9 @@ export function loopSections(l: Loop): Section[] {
   return out;
 }
 
-/** Sections along a 3D polyline (no banking: sideways stays level). */
-export function pathSections(pts: V3[]): Section[] {
+/** Sections along a 3D polyline. Sideways stays level, unless `bank` gives a roll angle per point
+ *  (radians, positive = tilted into a right-hand bend: the left edge higher). */
+export function pathSections(pts: V3[], bank?: number[]): Section[] {
   const out: Section[] = [];
   for (let i = 0; i < pts.length; i++) {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
@@ -90,6 +91,14 @@ export function pathSections(pts: V3[]): Section[] {
     // up = side x tangent
     const up: V3 = [side[1] * tz - side[2] * ty, side[2] * tx - side[0] * tz, side[0] * ty - side[1] * tx];
     const p = pts[i];
+    const roll = bank?.[i] ?? 0;
+    if (roll) {
+      const c = Math.cos(roll), s = Math.sin(roll);
+      const bs: V3 = [side[0] * c - up[0] * s, side[1] * c - up[1] * s, side[2] * c - up[2] * s];
+      const bu: V3 = [up[0] * c + side[0] * s, up[1] * c + side[1] * s, up[2] * c + side[2] * s];
+      out.push({ p: [p[0], p[1] + LIFT, p[2]], side: bs, up: bu });
+      continue;
+    }
     out.push({ p: [p[0], p[1] + LIFT, p[2]], side, up });
   }
   return out;
@@ -97,7 +106,7 @@ export function pathSections(pts: V3[]): Section[] {
 
 /** All sections of a track, in driving order. */
 export function trackSections(t: Track): Section[][] {
-  return t.parts.map((part) => (part.kind === 'loop' ? loopSections(part.loop) : pathSections(part.pts)));
+  return t.parts.map((part) => (part.kind === 'loop' ? loopSections(part.loop) : pathSections(part.pts, part.bank)));
 }
 
 /** Triangles of a strip of sections: road surface and both side walls (separate index lists). */
@@ -135,7 +144,7 @@ export function trackPosts(t: Track, ok: (x: number, z: number) => boolean) {
       const l = part.loop, c = Math.cos(l.yaw), s = Math.sin(l.yaw), top = (l.y ?? 0) + l.r * 2;
       for (const v of [-LOOP_W / 2 - 0.9, l.d + LOOP_W / 2 + 0.9]) for (const u of [-0.6, 0.6]) posts.push({ x: l.x + c * u - s * v, z: l.z + s * u + c * v, h: top });
       // Under the lead-in and run-out.
-      for (const { p } of [loopSections(l)[2], loopSections(l).at(-3)!]) if (ok(p[0], p[2])) posts.push({ x: p[0], z: p[2], h: p[1] - 0.25 });
+      for (const { p } of [loopSections(l)[2], loopSections(l).at(-3)!]) if (p[1] > 1.8 && ok(p[0], p[2])) posts.push({ x: p[0], z: p[2], h: p[1] - 0.25 });
       continue;
     }
     let walked = 6;
