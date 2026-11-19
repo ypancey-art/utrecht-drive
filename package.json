@@ -13,7 +13,8 @@
     "fetch-greenery": "node scripts/fetch-greenery.mjs",
     "place-ramps": "tsx scripts/place-ramps.ts",
     "test": "node --import tsx --test tests/*.test.ts",
-    "place-rail-stunts": "tsx scripts/place-rail-stunts.ts"
+    "place-rail-stunts": "tsx scripts/place-rail-stunts.ts",
+    "place-extra-stunts": "tsx scripts/place-extra-stunts.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
