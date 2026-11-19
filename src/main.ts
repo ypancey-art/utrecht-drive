@@ -167,7 +167,8 @@ async function start() {
   const decks = bridgeSegments(map, water, scenery.grid); // once: used for the meshes and the physics
   statics.add(buildMapMeshes(map, scenery.grid, water, dyke, decks));
   mark('map meshes');
-  statics.add(buildTrees(scenery.trees), buildLamps(scenery.lamps));
+  const trees = buildTrees(scenery.trees);
+  statics.add(trees, buildLamps(scenery.lamps));
   statics.add(buildGreenery(map.hedges ?? [], map.shrubs ?? []), buildRamps(freeRamps), buildLoops(freeLoops));
   mark('trees + greenery');
   tileStatic(statics);
@@ -620,6 +621,7 @@ async function start() {
         const q = car.body.rotation();
         const hx = 1 - 2 * (q.y * q.y + q.z * q.z), hz = 2 * (q.x * q.z - q.w * q.y);
         people.update(dt, cp.x, cp.z, car.sinking ? 0 : car.speed, Math.atan2(hz, hx));
+        trees.update(dt, cp.x, cp.z, car.sinking || cp.y > 3 ? 0 : car.speed);
         if (frameNo % 2 === 0) minimap.draw(cp.x, cp.z, Math.atan2(hz, hx));
       }
 

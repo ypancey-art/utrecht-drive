@@ -9,6 +9,8 @@ const pos = new THREE.Vector3();
 const scl = new THREE.Vector3();
 const col = new THREE.Color();
 const UP = new THREE.Vector3(0, 1, 0);
+const tilt = new THREE.Quaternion();
+const axis = new THREE.Vector3();
 
 function instanced(geo: THREE.BufferGeometry, mat: THREE.Material, count: number) {
   const mesh = new THREE.InstancedMesh(geo, mat, Math.max(count, 1));
@@ -18,9 +20,89 @@ function instanced(geo: THREE.BufferGeometry, mat: THREE.Material, count: number
   return mesh;
 }
 
-/** Low-poly trees in 4 shapes. Geometry is unit-sized; each instance is scaled to its real height and crown. */
-export function buildTrees(trees: Tree[]): THREE.Group {
-  const group = new THREE.Group();
+/** Trees don't block cars. When the player drives through one, it sways back and forth for a moment. */
+export class TreeGroup extends THREE.Group {
+  private grid = new Map<number, number[]>(); // tree indices per 8 m cell
+  private slots: { mesh: THREE.InstancedMesh; i: number }[][] | null = null; // per tree: its trunk + crown instances
+  private sway = new Map<number, { t: number; amp: number; ax: number; az: number }>();
+  constructor(
+    private trees: Tree[],
+    private trunkGeo: THREE.BufferGeometry,
+    private trunkTop: number[],
+  ) {
+    super();
+    trees.forEach((t, i) => {
+      const k = Math.floor(t.x / 8) * 4096 + Math.floor(t.z / 8);
+      (this.grid.get(k) ?? this.grid.set(k, []).get(k)!).push(i);
+    });
+  }
+
+  /** The tree's matrix for its trunk (or crown), tilted by `angle` around the horizontal axis (ax, az). */
+  matrixFor(i: number, trunk: boolean, angle = 0, ax = 1, az = 0) {
+    const t = this.trees[i];
+    q.setFromAxisAngle(UP, (t.x * 13.1 + t.z * 7.7) % (Math.PI * 2));
+    if (angle) q.premultiply(tilt.setFromAxisAngle(axis.set(ax, 0, az), angle));
+    pos.set(t.x, 0, t.z);
+    const r = Math.max(0.1, t.h / 75);
+    if (trunk) scl.set(r, t.h * this.trunkTop[t.kind] + 0.5, r);
+    else scl.set(t.crown, t.h, t.crown);
+    return m4.compose(pos, q, scl);
+  }
+
+  /** Finds each tree's instances (after tileStatic split the instanced meshes into tiles). */
+  private findSlots() {
+    const slots: { mesh: THREE.InstancedMesh; i: number }[][] = this.trees.map(() => []);
+    const p = new THREE.Vector3(), m = new THREE.Matrix4();
+    for (const o of this.children) {
+      const mesh = o as THREE.InstancedMesh;
+      if (!mesh.isInstancedMesh) continue;
+      const trunk = mesh.geometry === this.trunkGeo;
+      for (let j = 0; j < mesh.count; j++) {
+        mesh.getMatrixAt(j, m);
+        p.setFromMatrixPosition(m);
+        const cands = this.grid.get(Math.floor(p.x / 8) * 4096 + Math.floor(p.z / 8)) ?? [];
+        const id = cands.find((c) => Math.abs(this.trees[c].x - p.x) < 1e-3 && Math.abs(this.trees[c].z - p.z) < 1e-3 && !slots[c].some((s) => (s.mesh.geometry === this.trunkGeo) === trunk));
+        if (id !== undefined) slots[id].push({ mesh, i: j });
+      }
+    }
+    return slots;
+  }
+
+  /** Call every frame with the player car position and speed (m/s). */
+  update(dt: number, x: number, z: number, speed: number) {
+    const fast = Math.abs(speed) > 2;
+    if (fast || this.sway.size) this.slots ??= this.findSlots();
+    if (fast) {
+      const cx = Math.floor(x / 8), cz = Math.floor(z / 8);
+      for (let dx = -1; dx <= 1; dx++)
+        for (let dz = -1; dz <= 1; dz++)
+          for (const i of this.grid.get((cx + dx) * 4096 + cz + dz) ?? []) {
+            const t = this.trees[i];
+            const ex = t.x - x, ez = t.z - z, d = Math.hypot(ex, ez);
+            const s = this.sway.get(i);
+            if (d > 1.6 + t.h / 75 || (s && s.t < 0.4)) continue;
+            // Lean away from the car: tilt around the axis at right angles to car -> tree.
+            const ux = d > 0.01 ? ex / d : 1, uz = d > 0.01 ? ez / d : 0;
+            this.sway.set(i, { t: 0, amp: Math.min(0.35, 0.08 + Math.abs(speed) * 0.012), ax: uz, az: -ux });
+          }
+    }
+    const dirty = new Set<THREE.InstancedMesh>();
+    for (const [i, s] of this.sway) {
+      s.t += dt;
+      const done = s.t > 2.5;
+      const angle = done ? 0 : s.amp * Math.exp(-s.t * 2.2) * Math.cos(s.t * 9);
+      for (const { mesh, i: j } of this.slots![i]) {
+        mesh.setMatrixAt(j, this.matrixFor(i, mesh.geometry === this.trunkGeo, angle, s.ax, s.az));
+        dirty.add(mesh);
+      }
+      if (done) this.sway.delete(i);
+    }
+    for (const mesh of dirty) mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+/** Low-poly trees in 4 shapes. Geometry is unit-sized; each instance is scaled to its real height and crown.
+ *  Call `update` on the result every frame so trees sway when the car drives through them. */
+export function buildTrees(trees: Tree[]): TreeGroup {
   const trunkGeo = new THREE.CylinderGeometry(0.7, 1, 1, 6).translate(0, 0.5, 0);
   // Crowns span the top part of a 1 m tall, 1 m wide box. Like the street trees on Street View,
   // crowns are clusters of lobes (not one ball), darker underneath and lighter on top.
@@ -68,21 +150,17 @@ export function buildTrees(trees: Tree[]): THREE.Group {
   ];
   const trunkTop = [0.45, 0.3, 0.25, 0.45];
 
+  const group = new TreeGroup(trees, trunkGeo, trunkTop);
   const trunks = instanced(trunkGeo, new THREE.MeshLambertMaterial({ color: palette.trunk }), trees.length);
   const crownMeshes = crowns.map((g, k) =>
     instanced(g, new THREE.MeshLambertMaterial({ flatShading: true, vertexColors: true }), trees.filter((t) => t.kind === k).length),
   );
   const counters = [0, 0, 0, 0];
   trees.forEach((t, i) => {
-    q.setFromAxisAngle(UP, (t.x * 13.1 + t.z * 7.7) % (Math.PI * 2));
-    pos.set(t.x, 0, t.z);
-    const r = Math.max(0.1, t.h / 75);
-    scl.set(r, t.h * trunkTop[t.kind] + 0.5, r);
-    trunks.setMatrixAt(i, m4.compose(pos, q, scl));
-    scl.set(t.crown, t.h, t.crown);
+    trunks.setMatrixAt(i, group.matrixFor(i, true));
     const mesh = crownMeshes[t.kind];
     const n = counters[t.kind]++;
-    mesh.setMatrixAt(n, m4.compose(pos, q, scl));
+    mesh.setMatrixAt(n, group.matrixFor(i, false));
     const greens = t.kind === 2 ? palette.pine : t.kind === 3 ? palette.willow : palette.leaves;
     mesh.setColorAt(n, col.setHex(greens[(i * 7) % greens.length]));
   });

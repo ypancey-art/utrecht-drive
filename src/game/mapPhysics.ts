@@ -7,11 +7,11 @@ import { RAIL_H, RAIL_DECK, type Dyke } from './railway';
 import type { Item } from './playgrounds';
 import { MAP_HALF_SIZE } from './mapData';
 
-/** Static colliders: ground, building walls (one trimesh) and the map edge. */
+/** Static colliders: ground, building walls (one trimesh) and the map edge. Trees don't block. */
 export function buildMapPhysics(
   world: RAPIER.World,
   map: MapData,
-  trees: Tree[] = [],
+  _trees: Tree[] = [], // trees have no colliders: cars drive through them (they wobble, sceneryMeshes.ts)
   bridges: { ax: number; az: number; bx: number; bz: number; width: number; rails: [boolean, boolean] }[] = [],
   dyke?: Dyke,
   play?: { items: Item[]; areas: MapData['playgrounds'] },
@@ -98,11 +98,6 @@ export function buildMapPhysics(
     for (const tri of ShapeUtils.triangulateShape(ring.map(([x, z]) => new Vector2(x, z)), [])) ri.push(base + tri[0], base + tri[1], base + tri[2]);
   }
   if (ri.length) world.createCollider(RAPIER.ColliderDesc.trimesh(new Float32Array(rv), new Uint32Array(ri)).setFriction(0.9), fixed);
-
-  // Tree trunks.
-  for (const t of trees) {
-    world.createCollider(RAPIER.ColliderDesc.cylinder(2, Math.max(0.1, t.h / 75)).setTranslation(t.x, 2, t.z), fixed);
-  }
 
   // Bridge railings, so cars stay on the bridge.
   for (const b of bridges) {

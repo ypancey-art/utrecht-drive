@@ -149,3 +149,8 @@ Known gaps / next steps:
 - Bridges: an OSM-tagged bridge only gets a deck/railings near water, and path bridge pieces never lie on a street (fixed floating slabs/railings across Tiberdreef and Brailledreef).
 - Railway dyke: gentle 1:3.2 grass slopes (drivable) wherever they stay clear of roads, water and buildings (steep 1:1.5 next to them); applied after the gap-closing filter.
 - `scripts/place-rail-stunts.ts` (npm run place-rail-stunts): 4 ramps on top of the tracks (kind 'rail', `y` = RAIL_H) and a free Hot Wheels track "Spoorlus" (`free: true`, id railLoop) that leaves the tracks, goes round a building at ~(504,-63) with a loop behind it, and rejoins the tracks. Test-driven with compact + sport (the hypercar is too fast for its corners at full throttle). Ramp.y and Car.place(…, ground) added.
+
+## Fewer trees, drive-through trees (2026-11-19)
+- `placeScenery` thins trees by 30% (`thinOut`): lowest height x position-hash jitter (0.75-1.25) go first, so mostly small/young trees; big old trees stay. 4348 -> 3034 trees.
+- Trees are also kept off standalone loops (`loopSections`) and off jump ramps incl. 12 m run-up and 15 m landing (`onRamp`).
+- No tree trunk colliders any more (`buildMapPhysics` ignores its `trees` argument): player, traffic and police drive through trees. `buildTrees` returns a `TreeGroup`; `trees.update(dt, x, z, speed)` in main.ts makes a tree the player drives through sway (decaying tilt away from the car, ~2.5 s). Uses an 8 m grid of trees; instance slots are looked up once after `tileStatic` split the meshes.
