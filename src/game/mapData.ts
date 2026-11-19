@@ -22,9 +22,12 @@ export interface Building {
 /** A jump ramp: centre, direction of travel up the ramp (yaw, radians, 0 = +x), size. */
 /** water: jump over water; roof: drive up onto a roof; kick: steep kicker to jump onto a roof (roofH = that roof). */
 // kind 'rail': on top of the railway dyke (y = its base height).
-export interface Ramp { x: number; z: number; yaw: number; len: number; h: number; w: number; kind: 'water' | 'roof' | 'kick' | 'rail'; roofH?: number; y?: number; build?: string }
+// jump: a free-standing kicker on open ground (land on the grass); gap: take-off ramp of a pair,
+// land: its landing ramp (yaw points back at the take-off, so you land on the down slope).
+// extra: placed by scripts/place-extra-stunts.ts (removed and placed again when it runs).
+export interface Ramp { x: number; z: number; yaw: number; len: number; h: number; w: number; kind: 'water' | 'roof' | 'kick' | 'rail' | 'jump' | 'gap' | 'land'; roofH?: number; y?: number; build?: string; extra?: boolean }
 /** A loop: (x, z) is the bottom where the car enters, yaw the direction of the loop, r its radius, d how far sideways it comes out. */
-export interface Loop { x: number; z: number; yaw: number; r: number; d: number; y?: number; build?: string }
+export interface Loop { x: number; z: number; yaw: number; r: number; d: number; y?: number; build?: string; extra?: boolean }
 /** An elevated Hot Wheels track: path pieces (3D polylines, x/y/z) and loops in driving order.
  *  `through` lists buildings it drives through (index into buildings, and the track height there). */
 export interface Track {

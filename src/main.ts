@@ -36,6 +36,7 @@ import { t, getLang, setLang, onLangChange } from './i18n';
 import { isOpen, startScreen, mathGate, dialog, toast } from './ui/ui';
 import { openGarage } from './ui/garage';
 import { Minimap } from './ui/minimap';
+import { Stunts } from './game/stunts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const loadingEl = $('loading');
@@ -457,6 +458,7 @@ async function start() {
   const stunts = { air: 0, inverted: false, fast: 0, recordDirty: false, lastSave: 0 };
   // One jump: where it took off, how high it went and how far the car turned on each axis.
   const jump = { x: 0, z: 0, y0: 0, top: 0, pitch: 0, yaw: 0, roll: 0 };
+  const moreStunts = new Stunts(water, map.ramps ?? []); // two wheels, near misses, water/gap/double jumps, loop combos
   let stuntTimer = 0;
   const stunt = (key: Parameters<typeof t>[0], pts: number, list = '', big = false) => {
     progress.points += pts;
@@ -488,6 +490,7 @@ async function start() {
     if (dist > 40) { tricks.push(t('trickFar')); pts += 20; }
     else if (dist > 25) { tricks.push(t('trickLong')); pts += 10; }
     if (high > 6) { tricks.push(t('trickHigh')); pts += 10; }
+    for (const k of moreStunts.landed(jump, cp, stunts.air)) { tricks.push(k.name); pts += k.pts; }
     if (tricks.length && upY > 0.93) { tricks.push(t('trickLanding')); pts += 10; }
     if (tricks.length) stunt('stuntCombo', pts, tricks.join(' + '), true);
     else stunt(roof ? 'stuntRoof' : 'stuntAir', pts);
@@ -592,9 +595,11 @@ async function start() {
           if (upY < -0.5) stunts.inverted = true;
           else if (upY > 0.9 && stunts.inverted) {
             stunts.inverted = false;
-            stunt('stuntLoop', 25);
+            const e = moreStunts.loop();
+            stunt(e.key, e.pts, e.list, e.big);
           }
         }
+        for (const e of moreStunts.update(dt, car, traffic.units.map((u) => u.car), world)) stunt(e.key, e.pts, e.list, e.big);
         if (Math.abs(car.speed) > 25) {
           stunts.fast += dt;
           if (stunts.fast >= 4) {
