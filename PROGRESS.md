@@ -179,3 +179,12 @@ Review found the static site clean (npm audit 0, no secrets in history, no inner
 - Progress from localStorage repaired field by field (`clean()` in progress.ts); `?grade/?wanted/?garage/?people` only in the dev server
 - CSP meta tag in production builds (vite.config.ts); deploy workflow: no default permissions, build job read-only, actions pinned to commit SHAs, checkout without persisted credentials
 - Tests: tests/security.test.ts. Manual: attacker with the topic but no key could not add players, show text, move cars or close the room
+
+## Optimisation pass (2026-11-19)
+- Benchmark (4 fixed spots, standing, pixel ratio 1, M-series Mac): avg frame 21–28 → 18–22 ms, p95 48–65 → ~34 ms. Median is vsync-bound (16.7 ms); the problem was hitches
+- `src/art/lod.ts`: people hidden > 80 m (and no animation work), shadows only < 35 m; traffic cars hidden > 220 m, shadows only < 45 m. `viewer` is set from the camera each frame
+- Car models (traffic, police, player, other players) now free their cloned materials when removed (traffic spawns/despawns all the time: was a slow leak)
+- WaterMap: per-20 m-cell inside/outside cache for water polygons (the canal polygon has 596 corners). Startup: bridge segments 508 → 126 ms, map meshes 1317 → 845 ms. Finer startup marks in the console ("startup …")
+- Build: three.js and Rapier in their own chunks, so a game update downloads ~66 KB gz instead of ~1.9 MB
+- CSP fix: `connect-src` needs `blob: data:` (GLTFLoader fetches embedded textures via blob: URLs); without it cars/people had no textures
+- Not done: Rapier "compat" inlines its WASM as base64 (4.3 MB chunk); switching to the non-compat package with a separate .wasm would save ~25% download

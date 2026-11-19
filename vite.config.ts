@@ -6,7 +6,8 @@ import { defineConfig, type Plugin } from 'vite';
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'wasm-unsafe-eval'",
-  "connect-src 'self' wss://broker.hivemq.com:8884 wss://broker.emqx.io:8084",
+  // blob:/data: — the 3D model loader fetches embedded textures through blob: URLs.
+  "connect-src 'self' blob: data: wss://broker.hivemq.com:8884 wss://broker.emqx.io:8084",
   "img-src 'self' data: blob:",
   "worker-src 'self' blob:",
   "style-src 'self' 'unsafe-inline'",
@@ -24,6 +25,15 @@ const csp = (): Plugin => ({
 // Relative base so the build works both locally and on GitHub Pages (/utrecht-drive/).
 export default defineConfig({
   base: './',
-  build: { chunkSizeWarningLimit: 6000 },
+  build: {
+    chunkSizeWarningLimit: 6000,
+    rollupOptions: {
+      output: {
+        // Libraries in their own files: they rarely change, so browsers keep them cached
+        // across game updates (only the game's own code is downloaded again).
+        manualChunks: (id: string) => (id.includes('@dimforge/rapier') ? 'rapier' : id.includes('node_modules/three') ? 'three' : undefined),
+      },
+    },
+  },
   plugins: [csp()],
 });

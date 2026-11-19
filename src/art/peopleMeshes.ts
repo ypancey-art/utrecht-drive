@@ -1,5 +1,6 @@
 // Simple low-poly people and bikes. Local +x is forward, y up.
 import * as THREE from 'three';
+import { distToViewer, shadowSwitch, PEOPLE_HIDE, PEOPLE_SHADOW } from './lod';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { PersonKind, PersonVisual } from '../game/people';
 import { getLang } from '../i18n';
@@ -211,8 +212,16 @@ export function makePersonVisual(scene: THREE.Scene, kind: PersonKind): PersonVi
   const HEAD = (kind === 'walker' ? 1.57 : 1.62) * s; // head height when standing
   const PIVOT = 0.9 * s; // tumble around the middle of the body
   scene.add(root);
+  const shadows = shadowSwitch([root, bikeRoot]);
   return {
     sync(x, z, heading, phase, fallen, flight) {
+      // Far away: hidden, and no animation work (unless flying after a crash).
+      const d = distToViewer(x, z);
+      const show = d < PEOPLE_HIDE || !!flight;
+      root.visible = show;
+      bikeRoot.visible = show && kind === 'cyclist';
+      if (!show) return;
+      shadows(d < PEOPLE_SHADOW);
       root.position.set(x, 0, z);
       root.rotation.y = -heading;
       const flying = !!flight && fallen === 0 && (flight.y > 0 || flight.spin !== 0);

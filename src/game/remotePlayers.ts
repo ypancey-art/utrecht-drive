@@ -2,7 +2,7 @@
 // behind so movement stays fluid), with a name above them. Each has a solid body so you can bump.
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { buildCarModel, type CarModel } from '../art/carModels';
+import { buildCarModel, disposeCarModel, type CarModel } from '../art/carModels';
 import { carById } from './cars';
 import type { PlayerInfo, Pose } from '../net/room';
 
@@ -71,12 +71,7 @@ export class RemotePlayers {
     const r = this.list.get(id);
     if (!r) return;
     this.scene.remove(r.model.body, ...r.model.wheels);
-    // The car's materials are its own copies: free them (geometry is shared with the car pack).
-    for (const root of [r.model.body, ...r.model.wheels])
-      root.traverse((o) => {
-        const m = (o as THREE.Mesh).material;
-        if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.dispose();
-      });
+    disposeCarModel(r.model); // the tag's material goes with it, its texture below
     r.tag.material.map?.dispose();
     this.world.removeRigidBody(r.body);
     this.list.delete(id);
