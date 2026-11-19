@@ -145,7 +145,7 @@ function pick(name: string, cands: Cand[], want: number, spacing: number, sameSp
   console.log(`${name}: ${got} placed (${cands.length} candidates, ${tried} test-driven)`);
 }
 
-const W = 4;
+const W = 6; // ramp width (was 4; 50% wider is easier to hit)
 // ---- more roof ramps (as in place-ramps.ts)
 {
   const cands: Cand[] = [];

@@ -72,7 +72,7 @@ console.log(`${straights.length} straights`, straights.map((s) => s.len.toFixed(
 await RAPIER.init();
 
 // ---- 1. ramps on the tracks
-const RL = 8, RH = 1.4, RW = 3.6;
+const RL = 8, RH = 1.4, RW = 3.6; // wider rail ramps (4.5, 5.4) flipped the sport car; you line up on the tracks anyway
 async function testRamp(r: Ramp) {
   const { world } = await buildWorld({ ...loadMapData(), ramps: [], tracks: [], loops: [] });
   addRampPhysics(world, rampHulls(r));

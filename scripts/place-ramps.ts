@@ -69,7 +69,7 @@ const ramps: Ramp[] = [];
 const far = (x: number, z: number, d: number) => ramps.every((r) => Math.hypot(r.x - x, r.z - z) > d);
 
 // ---- water ramps
-const WL = 7, WH = 1.6, W = 4;
+const WL = 7, WH = 1.6, W = 6; // W was 4; 50% wider is easier to hit
 const cands: (Ramp & { score: number })[] = [];
 for (let z = -H + 40; z < H - 40; z += 4)
   for (let x = -H + 40; x < H - 40; x += 4) {
